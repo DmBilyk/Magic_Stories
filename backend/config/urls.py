@@ -20,9 +20,13 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('apps.urls')),
+    path('api/', include('studios.urls')),
+    path('api/bookings/', include('bookings.urls')),
+    path('api/clothing/', include('clothing.urls')),
+    path('api/props/', include('props.urls')),
 ]
 
 if settings.DEBUG:

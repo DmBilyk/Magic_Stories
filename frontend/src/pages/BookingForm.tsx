@@ -1,0 +1,534 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Clock, User, ArrowLeft, Plus,
+  MapPin, Calendar, ChevronRight
+} from 'lucide-react';
+import { useBooking } from '../context/BookingContext';
+import { bookingService, serviceAPI, availabilityService } from '../services/api';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+import { ErrorMessage } from '../components/ErrorMessage';
+import { DatePicker } from '../components/DatePicker';
+import type { AdditionalService, BookingSettings, TimeSlot } from '../types';
+import {
+  getTodayDate,
+  getMaxBookingDate,
+  formatTime,
+  isTimeSlotInPast,
+  formatCurrency,
+} from '../utils/dateTime';
+
+export const BookingForm = () => {
+  const navigate = useNavigate();
+  const {
+    selectedLocation,
+    bookingDate,
+    setBookingDate,
+    bookingTime,
+    setBookingTime,
+    durationHours,
+    setDurationHours,
+    selectedServices,
+    setSelectedServices,
+    contactInfo,
+    setContactInfo,
+  } = useBooking();
+
+  const [settings, setSettings] = useState<BookingSettings | null>(null);
+  const [services, setServices] = useState<AdditionalService[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+
+  // Form states
+  const [firstName, setFirstName] = useState(contactInfo.firstName || '');
+  const [lastName, setLastName] = useState(contactInfo.lastName || '');
+  const [phone, setPhone] = useState(contactInfo.phone || '');
+  const [email, setEmail] = useState(contactInfo.email || '');
+  const [notes, setNotes] = useState(contactInfo.notes || '');
+
+  const [loading, setLoading] = useState(true);
+  const [checkingSlots, setCheckingSlots] = useState(false);
+  const [error, setError] = useState('');
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      navigate('/');
+      return;
+    }
+    loadInitialData();
+  }, [selectedLocation, navigate]);
+
+  useEffect(() => {
+    if (bookingDate && selectedLocation && settings && durationHours > 0) {
+      checkAvailability();
+    }
+  }, [bookingDate, durationHours, selectedLocation, settings]);
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      const [settingsData, servicesData] = await Promise.all([
+        bookingService.getSettings(),
+        serviceAPI.getAll(),
+      ]);
+      setSettings(settingsData);
+
+      const min = settingsData?.minBookingHours ? Number(settingsData.minBookingHours) : 1;
+
+      if (!durationHours || durationHours < min) {
+        setDurationHours(min);
+      }
+
+      setServices(servicesData.filter((s) => s.isActive));
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load booking data');
+      setDurationHours(1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkAvailability = async () => {
+    if (!selectedLocation || !bookingDate || !durationHours) return;
+
+    try {
+      setCheckingSlots(true);
+      const response = await availabilityService.checkAvailability(
+        bookingDate,
+        durationHours,
+        selectedLocation.id
+      );
+
+      const formattedSlots = response.slots.map((slot) => ({
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        available: slot.available,
+      }));
+      setAvailableSlots(formattedSlots);
+
+      setError('');
+
+      if (bookingTime && !formattedSlots.some((s) => s.startTime === bookingTime && s.available)) {
+        setBookingTime('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to check availability');
+      setAvailableSlots([]);
+    } finally {
+      setCheckingSlots(false);
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!firstName.trim()) errors.firstName = "Ім'я обов'язкове";
+    if (!lastName.trim()) errors.lastName = "Прізвище обов'язкове";
+    if (!phone.trim()) errors.phone = "Номер телефону обов'язковий";
+    else if (!/^\+?[\d\s-()]+$/.test(phone)) errors.phone = 'Невірний формат номера телефону';
+    if (!email.trim()) errors.email = "Email обов'язковий";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Невірний формат email';
+    if (!bookingDate) errors.date = 'Будь ласка, оберіть дату';
+    if (!bookingTime) errors.time = 'Будь ласка, оберіть час';
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = () => {
+    if (!validateForm()) {
+      setError("Будь ласка, заповніть всі обов'язкові поля коректно");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setContactInfo({ firstName, lastName, phone, email, notes });
+    navigate('/clothing');
+  };
+
+  const toggleService = (service: AdditionalService) => {
+    setSelectedServices((prev) =>
+      prev.find((s) => s.id === service.id)
+        ? prev.filter((s) => s.id !== service.id)
+        : [...prev, service]
+    );
+  };
+
+  const calculateTotal = () => {
+    if (!selectedLocation) return 0;
+    const basePrice = selectedLocation.hourlyRate * durationHours;
+    const servicesPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+    return basePrice + servicesPrice;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!settings || !selectedLocation) return null;
+
+  const minH = settings.minBookingHours ? Number(settings.minBookingHours) : 1;
+  const maxH = settings.maxBookingHours ? Number(settings.maxBookingHours) : 8;
+  const safeMin = isNaN(minH) ? 1 : minH;
+  const safeMax = isNaN(maxH) || maxH < safeMin ? safeMin + 8 : maxH;
+
+  const hoursOptions = Array.from(
+    { length: safeMax - safeMin + 1 },
+    (_, i) => safeMin + i
+  );
+
+  const today = getTodayDate();
+  const maxDate = getMaxBookingDate(settings.advanceBookingDays || 30);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              <span className="font-medium">Назад до студій</span>
+            </button>
+            <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Бронювання</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {/* Error Display */}
+        {error && (
+            <div className="mb-6">
+              <ErrorMessage message={error} />
+            </div>
+        )}
+
+        {/* Hero / Location Info (Square & Minimal) */}
+        <div className="bg-white border border-slate-200 mb-10 shadow-sm">
+          <div className="p-8">
+            <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-2">
+               <div>
+                  <h1 className="text-3xl font-bold text-slate-900 mb-2">{selectedLocation.name}</h1>
+                  {(selectedLocation as any).address && (
+                    <div className="flex items-center text-slate-500 mb-4">
+                      <MapPin className="w-4 h-4 mr-2" />
+                      <span className="text-sm">{(selectedLocation as any).address}</span>
+                    </div>
+                  )}
+               </div>
+               <div className="flex items-center bg-slate-50 px-4 py-2 border border-slate-100">
+                  <span className="font-bold text-slate-900 mr-1 text-lg">
+                    {formatCurrency(selectedLocation.hourlyRate)}
+                  </span>
+                  <span className="text-slate-500 text-sm">/ година</span>
+               </div>
+            </div>
+            <p className="text-slate-500 text-sm max-w-2xl">
+               Заповніть форму нижче, щоб забронювати цей простір. Оберіть зручний час та додаткові послуги.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-10">
+          {/* Date and Duration */}
+          <section>
+            <div className="flex items-center mb-6">
+              <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3">
+                 <Calendar className="w-4 h-4 text-slate-700" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">Дата і тривалість</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Дата
+                </label>
+                <DatePicker
+                  selectedDate={bookingDate}
+                  onChange={(date) => {
+                    setBookingDate(date);
+                    setBookingTime('');
+                    setValidationErrors((prev) => ({ ...prev, date: '', time: '' }));
+                  }}
+                  minDate={today}
+                  maxDate={maxDate}
+                  error={validationErrors.date}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Тривалість
+                </label>
+                <select
+                  value={durationHours}
+                  onChange={(e) => {
+                    setDurationHours(Number(e.target.value));
+                    setBookingTime('');
+                  }}
+                  className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white font-medium text-slate-900 appearance-none rounded-none"
+                >
+                  {hoursOptions.map((hours) => (
+                    <option key={hours} value={hours}>
+                      {hours} {hours === 1 ? 'година' : hours < 5 ? 'години' : 'годин'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Time Slots */}
+          {bookingDate && (
+            <section className="border-t border-slate-100 pt-10">
+              <div className="flex items-center mb-6">
+                <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3">
+                   <Clock className="w-4 h-4 text-slate-700" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">Оберіть час</h2>
+              </div>
+
+              {checkingSlots ? (
+                <div className="py-8 flex justify-center">
+                  <LoadingSpinner />
+                </div>
+              ) : availableSlots.length === 0 ? (
+                <div className="text-center py-8 bg-slate-50 border border-slate-100">
+                  <p className="text-slate-600 font-medium">Немає вільних слотів</p>
+                  <p className="text-sm text-slate-400 mt-1">Змініть дату або тривалість</p>
+                </div>
+              ) : (
+                <div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {availableSlots.map((slot) => {
+                        const isPast = isTimeSlotInPast(bookingDate, slot.startTime);
+                        const isAvailable = slot.available && !isPast;
+                        const isSelected = bookingTime === slot.startTime;
+
+                        return (
+                        <button
+                            key={slot.startTime}
+                            type="button"
+                            onClick={() => {
+                            if (isAvailable) {
+                                setBookingTime(slot.startTime);
+                                setValidationErrors((prev) => ({ ...prev, time: '' }));
+                            }
+                            }}
+                            disabled={!isAvailable}
+                            className={`px-4 py-3 font-medium text-sm transition-all border rounded-none ${
+                            isSelected
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-none'
+                                : isAvailable
+                                ? 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
+                                : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                            }`}
+                        >
+                            {formatTime(slot.startTime)}
+                        </button>
+                        );
+                    })}
+                    </div>
+                    {validationErrors.time && (
+                    <p className="text-red-600 text-sm mt-3 ml-1">{validationErrors.time}</p>
+                    )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Additional Services */}
+          {services.length > 0 && (
+            <section className="border-t border-slate-100 pt-10">
+              <div className="flex items-center mb-6">
+                 <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3">
+                   <Plus className="w-4 h-4 text-slate-700" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">Додаткові послуги</h2>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {services.map((service) => {
+                  const isSelected = selectedServices.some((s) => s.id === service.id);
+                  return (
+                    <div
+                      key={service.id}
+                      onClick={() => toggleService(service)}
+                      className={`group p-5 cursor-pointer transition-all border rounded-none ${
+                        isSelected
+                          ? 'bg-slate-50 border-slate-900 ring-1 ring-slate-900'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-slate-900 text-base">{service.name}</h3>
+                        <span className="text-base font-semibold text-slate-900">
+                          {formatCurrency(service.price)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 mb-2 leading-relaxed">{service.description}</p>
+                      {service.durationMinutes > 0 && (
+                        <p className="text-xs text-slate-400">
+                          + {service.durationMinutes} хв
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Contact Information */}
+          <section className="border-t border-slate-100 pt-10 mb-20">
+            <div className="flex items-center mb-6">
+               <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3">
+                   <User className="w-4 h-4 text-slate-700" />
+                </div>
+              <h2 className="text-xl font-bold text-slate-900">Контакти</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Ім'я
+                </label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setValidationErrors((prev) => ({ ...prev, firstName: '' }));
+                  }}
+                  className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
+                    validationErrors.firstName ? 'border-red-400' : 'border-slate-200'
+                  }`}
+                  placeholder="Іван"
+                />
+                {validationErrors.firstName && (
+                  <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.firstName}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Прізвище
+                </label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setValidationErrors((prev) => ({ ...prev, lastName: '' }));
+                  }}
+                  className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
+                    validationErrors.lastName ? 'border-red-400' : 'border-slate-200'
+                  }`}
+                  placeholder="Петренко"
+                />
+                {validationErrors.lastName && (
+                  <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.lastName}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Телефон
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    setValidationErrors((prev) => ({ ...prev, phone: '' }));
+                  }}
+                  className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
+                    validationErrors.phone ? 'border-red-400' : 'border-slate-200'
+                  }`}
+                  placeholder="+380..."
+                />
+                {validationErrors.phone && (
+                  <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.phone}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setValidationErrors((prev) => ({ ...prev, email: '' }));
+                  }}
+                  className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
+                    validationErrors.email ? 'border-red-400' : 'border-slate-200'
+                  }`}
+                  placeholder="ivan@example.com"
+                />
+                {validationErrors.email && (
+                  <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.email}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
+                Нотатки
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none rounded-none"
+                placeholder="Додаткові побажання..."
+              />
+            </div>
+          </section>
+        </div>
+      </div>
+
+      {/* Summary Footer */}
+      <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4 sm:p-6 z-30">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-center sm:text-left">
+            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">До сплати</p>
+            <div className="flex items-baseline gap-2 justify-center sm:justify-start">
+              <span className="text-3xl font-bold text-slate-900">
+                {formatCurrency(calculateTotal())}
+              </span>
+              <span className="text-sm text-slate-500">
+                за {durationHours} год
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-3 w-full sm:w-auto">
+             <button
+                onClick={() => navigate('/')}
+                className="flex-1 sm:flex-none px-6 py-4 text-slate-600 font-medium hover:bg-slate-50 border border-slate-200 hover:border-slate-400 transition-colors rounded-none"
+            >
+              Скасувати
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="flex-1 sm:flex-none bg-slate-900 hover:bg-black text-white px-8 py-4 font-bold transition-all shadow-none hover:shadow-lg flex items-center justify-center rounded-none"
+            >
+              <span>Далі</span>
+              <ChevronRight className="ml-2 w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
