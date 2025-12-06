@@ -1,13 +1,14 @@
 from datetime import datetime, date, time, timedelta
 from typing import List, Dict, Tuple, Optional
 from decimal import Decimal
+from django.db.models import Q
+
 from .models import StudioBooking, BookingSettings
 from studios.models import AdditionalService, Location
-from django.db.models import Q
 
 
 class BookingAvailabilityService:
-    """Service for checking booking availability"""
+    """Check and manage booking availability and time slots."""
 
     def __init__(self):
         self.settings = BookingSettings.get_settings()
@@ -16,43 +17,33 @@ class BookingAvailabilityService:
             self,
             check_date: date,
             duration_hours: int,
-            location_id: str = None  # NEW: Optional location filter
+            location_id: str = None
     ) -> List[Dict]:
-        """
-        Get all available time slots for a given date and duration.
-        If location_id provided, check availability for that specific location.
-        Returns list of dicts with start_time, end_time, and available status.
-        """
+        """Get all available time slots for date, duration, and optional location."""
         if check_date < date.today():
             return []
 
-        # Get existing bookings for the date
         existing_bookings = StudioBooking.objects.filter(
             booking_date=check_date,
             status__in=['pending_payment', 'paid', 'confirmed']
         )
 
-        # Filter by location if provided
         if location_id:
             existing_bookings = existing_bookings.filter(location_id=location_id)
 
         existing_bookings = existing_bookings.order_by('booking_time')
 
-        # Generate potential time slots (hourly intervals)
         available_slots = []
         current_time = self.settings.opening_time
 
         while True:
-            # Calculate slot end time
             start_datetime = datetime.combine(check_date, current_time)
             end_datetime = start_datetime + timedelta(hours=duration_hours)
             end_time = end_datetime.time()
 
-            # Check if slot extends past closing time
             if end_time > self.settings.closing_time:
                 break
 
-            # Check if slot conflicts with existing bookings
             is_available = self._check_slot_availability(
                 check_date,
                 current_time,
@@ -66,7 +57,6 @@ class BookingAvailabilityService:
                 'available': is_available
             })
 
-            # Move to next hour
             next_datetime = start_datetime + timedelta(hours=1)
             current_time = next_datetime.time()
 
@@ -82,7 +72,7 @@ class BookingAvailabilityService:
             end_time: time,
             existing_bookings
     ) -> bool:
-        """Check if a specific time slot is available"""
+        """Check if specific time slot conflicts with existing bookings."""
         slot_start = datetime.combine(check_date, start_time)
         slot_end = datetime.combine(check_date, end_time)
 
@@ -90,7 +80,6 @@ class BookingAvailabilityService:
             booking_start = datetime.combine(check_date, booking.booking_time)
             booking_end = booking_start + timedelta(hours=booking.duration_hours)
 
-            # Check for overlap
             if slot_start < booking_end and slot_end > booking_start:
                 return False
 
@@ -101,20 +90,15 @@ class BookingAvailabilityService:
             booking_date: date,
             booking_time: time,
             duration_hours: int,
-            location_id: str,  # NEW: Required location
+            location_id: str,
             exclude_booking_id: str = None
     ) -> Tuple[bool, str]:
-        """
-        Check if a specific slot is available for a location.
-        Returns (is_available, message)
-        """
-        # Verify location exists and is active
+        """Check if specific slot is available for location."""
         try:
             location = Location.objects.get(id=location_id, is_active=True)
         except Location.DoesNotExist:
             return False, "Invalid or inactive location"
 
-        # Check date validity
         if booking_date < date.today():
             return False, "Cannot book dates in the past"
 
@@ -122,11 +106,9 @@ class BookingAvailabilityService:
         if booking_date > max_date:
             return False, f"Cannot book more than {self.settings.advance_booking_days} days in advance"
 
-        # Check working hours
         if booking_time < self.settings.opening_time:
             return False, f"Studio opens at {self.settings.opening_time}"
 
-        # Calculate end time
         start_datetime = datetime.combine(booking_date, booking_time)
         end_datetime = start_datetime + timedelta(hours=duration_hours)
         end_time = end_datetime.time()
@@ -134,7 +116,6 @@ class BookingAvailabilityService:
         if end_time > self.settings.closing_time:
             return False, f"Booking extends past closing time ({self.settings.closing_time})"
 
-        # Check conflicts for this specific location
         conflicts = StudioBooking.objects.filter(
             location=location,
             booking_date=booking_date,
@@ -157,10 +138,10 @@ class BookingAvailabilityService:
             self,
             start_date: date,
             duration_hours: int,
-            location_id: str = None,  # NEW: Optional location
+            location_id: str = None,
             days_to_check: int = 7
     ) -> Optional[Dict]:
-        """Find the next available slot starting from a given date"""
+        """Find next available slot starting from given date."""
         current_date = start_date
         end_date = start_date + timedelta(days=days_to_check)
 
@@ -185,10 +166,7 @@ class BookingAvailabilityService:
             end_date: date,
             duration_hours: int = 1
     ) -> Dict[str, List[Dict]]:
-        """
-        Get availability calendar for a specific location
-        Returns dict with dates as keys and available slots as values
-        """
+        """Get availability calendar for specific location within date range."""
         calendar = {}
         current_date = start_date
 
@@ -201,24 +179,19 @@ class BookingAvailabilityService:
 
 
 class BookingCalculationService:
-    """Service for price calculations"""
+    """Calculate booking costs and pricing breakdown."""
 
     @staticmethod
     def calculate_booking_cost(
             duration_hours: int,
-            location_id: str = None,  # NEW: Use location's hourly rate
+            location_id: str = None,
             additional_service_ids: List[str] = None,
             settings: BookingSettings = None
     ) -> Dict[str, Decimal]:
-        """
-        Calculate total cost, deposit, and breakdown.
-        If location_id provided, use location's hourly rate, otherwise use settings.
-        Returns dict with base_cost, services_cost, total, deposit.
-        """
+        """Calculate total cost, deposit, and breakdown using location or default rate."""
         if settings is None:
             settings = BookingSettings.get_settings()
 
-        # Get hourly rate from location or settings
         if location_id:
             try:
                 location = Location.objects.get(id=location_id, is_active=True)
@@ -252,11 +225,11 @@ class BookingCalculationService:
 
 
 class BookingManagementService:
-    """Service for managing booking lifecycle"""
+    """Manage booking lifecycle and status transitions."""
 
     @staticmethod
     def cancel_booking(booking: StudioBooking, reason: str = None) -> bool:
-        """Cancel a booking"""
+        """Cancel booking with optional reason."""
         if booking.status in ['completed', 'cancelled']:
             return False
 
@@ -269,7 +242,7 @@ class BookingManagementService:
 
     @staticmethod
     def confirm_booking(booking: StudioBooking) -> bool:
-        """Confirm a paid booking"""
+        """Confirm paid booking."""
         if booking.status != 'paid':
             return False
 
@@ -280,7 +253,7 @@ class BookingManagementService:
 
     @staticmethod
     def complete_booking(booking: StudioBooking) -> bool:
-        """Mark booking as completed"""
+        """Mark booking as completed."""
         if booking.status != 'confirmed':
             return False
 
@@ -291,7 +264,7 @@ class BookingManagementService:
 
     @staticmethod
     def update_payment_status(booking: StudioBooking) -> bool:
-        """Update booking status based on payment status"""
+        """Update booking status based on payment status."""
         if not booking.payment:
             return False
 
@@ -305,9 +278,9 @@ class BookingManagementService:
     @staticmethod
     def get_upcoming_bookings(
             days: int = 7,
-            location_id: str = None  # NEW: Optional location filter
+            location_id: str = None
     ) -> List[StudioBooking]:
-        """Get all upcoming bookings, optionally filtered by location"""
+        """Get upcoming bookings, optionally filtered by location."""
         today = date.today()
         end_date = today + timedelta(days=days)
 
@@ -324,9 +297,9 @@ class BookingManagementService:
     @staticmethod
     def get_bookings_by_status(
             status: str,
-            location_id: str = None  # NEW: Optional location filter
+            location_id: str = None
     ) -> List[StudioBooking]:
-        """Get bookings by status, optionally filtered by location"""
+        """Get bookings by status, optionally filtered by location."""
         queryset = StudioBooking.objects.filter(status=status)
 
         if location_id:
@@ -340,7 +313,7 @@ class BookingManagementService:
             start_date: date = None,
             end_date: date = None
     ) -> List[StudioBooking]:
-        """Get all bookings for a specific location in date range"""
+        """Get all bookings for specific location in date range."""
         queryset = StudioBooking.objects.filter(location_id=location_id)
 
         if start_date:

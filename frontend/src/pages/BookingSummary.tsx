@@ -94,24 +94,32 @@ export const BookingSummary = () => {
     setError('');
 
     try {
+      // Переконуємося що час має правильний формат (HH:MM або HH:MM:SS)
+      const formattedTime = bookingTime.length === 5 ? bookingTime : bookingTime.substring(0, 5);
+
+      // Формуємо clothing_items тільки якщо є елементи в кошику
+      const clothingItemsData = clothingCart.length > 0
+        ? clothingCart.map((item) => ({
+            clothing_item_id: item.item.id, // <--- ЗМІНЕНО: додано _id
+            quantity: item.quantity,
+          }))
+        : undefined; // Не надсилаємо порожній масив
+
       const bookingRequest = {
-        locationId: selectedLocation.id,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        phoneNumber: formData.phone,
+        locationId: selectedLocation.id,      // було location_id
+        firstName: formData.firstName,        // було first_name
+        lastName: formData.lastName,          // було last_name
+        phoneNumber: formData.phone,          // було phone_number
         email: formData.email,
-        bookingDate,
-        bookingTime,
-        durationHours,
-        additionalServiceIds: selectedServices.map((s) => s.id),
-        clothingItems: clothingCart.map((item) => ({
-          clothingItemId: item.item.id,
-          quantity: item.quantity,
-        })),
-        propItems: [],
-        notes: formData.notes,
+        bookingDate: bookingDate,             // було booking_date
+        bookingTime: formattedTime,           // було booking_time
+        durationHours: durationHours,         // було duration_hours
+        additionalServiceIds: selectedServices.map((s) => s.id), // було additional_service_ids
+        clothingItems: clothingItemsData,     // передаємо виправлений масив
+        notes: formData.notes || '',
       };
 
+      console.log('Sending correct request:', bookingRequest); // Тепер тут будуть правильні дані
       const response = await bookingService.create(bookingRequest);
 
       if (response.payment?.liqpayData) {

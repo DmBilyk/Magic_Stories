@@ -3,11 +3,16 @@ import hashlib
 import json
 import uuid
 import requests
+import logging
 from decimal import Decimal
+from typing import Optional, Dict
 
 from django.conf import settings
 from django.urls import reverse
 from .models import StudioPayment
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class LiqPayService:
@@ -45,12 +50,17 @@ class LiqPayService:
             'order_id': str(payment.id),
             'version': '3',
             'public_key': self.public_key,
-            'server_url': server_url,  # URL для callback-повідомлень
-            'result_url': result_url,  # URL для редиректу користувача
+            'server_url': server_url,
+            'result_url': result_url,
         }
 
         data = self._encode_data(params)
         signature = self._create_signature(data)
+
+        logger.info(
+            f"Generated payment form for payment {payment.id}, "
+            f"amount: {payment.amount} UAH"
+        )
 
         return {
             'data': data,
@@ -58,23 +68,28 @@ class LiqPayService:
             'checkout_url': self.checkout_url
         }
 
-    def verify_callback(self, data: str, signature: str) -> dict | None:
+    def verify_callback(self, data: str, signature: str) -> Optional[Dict]:
         """
         Перевіряє підпис `callback`-запиту від LiqPay.
         Повертає розкодовані дані, якщо підпис вірний.
         """
         expected_signature = self._create_signature(data)
         if expected_signature != signature:
-            # TODO: Логувати помилку!
-            print("LiqPay callback signature mismatch!")
+            logger.error(
+                "LiqPay callback signature mismatch! "
+                f"Expected: {expected_signature}, Got: {signature}"
+            )
             return None
 
         try:
             decoded_data = json.loads(base64.b64decode(data).decode('utf-8'))
+            logger.info(
+                f"LiqPay callback verified for order_id: {decoded_data.get('order_id')}, "
+                f"status: {decoded_data.get('status')}"
+            )
             return decoded_data
         except Exception as e:
-            # TODO: Логувати помилку!
-            print(f"LiqPay callback data decode error: {e}")
+            logger.error(f"LiqPay callback data decode error: {e}", exc_info=True)
             return None
 
 
@@ -92,7 +107,7 @@ class CheckboxService:
             'accept': 'application/json',
         }
 
-    def create_receipt(self, payment: StudioPayment, client_email: str = None) -> dict | None:
+    def create_receipt(self, payment: StudioPayment, client_email: str = None) -> Optional[Dict]:
         """
         Створює фіскальний чек (чек продажу) в Checkbox.
         """
@@ -103,43 +118,66 @@ class CheckboxService:
             'id': str(uuid.uuid4()),  # Унікальний ID запиту
             'goods': [
                 {
-                    'code': 'STUDIO-RENT-PREPAY',  # Ваш внутрішній артикул/код послуги
+                    'code': 'STUDIO-RENT-PREPAY',
                     'name': payment.description,
-                    'price': amount_kopecks,  # Ціна в копійках
-                    'quantity': 1000,  # Кількість: 1.000 (одна послуга)
+                    'price': amount_kopecks,
+                    'quantity': 1000,  # 1.000 (одна послуга)
                 }
             ],
             'payments': [
                 {
-                    'type': 'CASHLESS',  # Тип оплати "Безготівковий" (LiqPay = картка)
+                    'type': 'CASHLESS',
                     'value': amount_kopecks,
                 }
             ],
         }
 
-        # Додаємо email клієнта, якщо він є, для відправки чека
+        # Додаємо email клієнта, якщо він є
         if client_email:
             payload['delivery'] = {
                 'email': client_email
             }
 
         try:
-            # Увага: перед створенням чека має бути відкрита зміна!
-            # /api/v1/shifts/
             response = requests.post(
                 f"{self.api_url}/api/v1/receipts/sell",
                 headers=self.headers,
-                json=payload
+                json=payload,
+                timeout=30  # Додаємо timeout для безпеки
             )
-            response.raise_for_status()  # Генерує помилку для 4xx/5xx статусів
+            response.raise_for_status()
 
             receipt_data = response.json()
-            # receipt_data містить 'id', 'status', 'fiscal_code' тощо.
+            logger.info(
+                f"Checkbox receipt created successfully for payment {payment.id}, "
+                f"receipt_id: {receipt_data.get('id')}, "
+                f"fiscal_code: {receipt_data.get('fiscal_code')}"
+            )
             return receipt_data
 
-        except requests.exceptions.RequestException as e:
-            # TODO: Налаштуйте детальне логування помилок!
-            print(f"Checkbox API error: {e}")
+        except requests.exceptions.Timeout:
+            logger.error(
+                f"Checkbox API timeout for payment {payment.id}",
+                exc_info=True
+            )
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.error(
+                f"Checkbox API HTTP error for payment {payment.id}: {e}",
+                exc_info=True
+            )
             if e.response:
-                print(f"Checkbox API response: {e.response.text}")
+                logger.error(f"Checkbox API response: {e.response.text}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Checkbox API request error for payment {payment.id}: {e}",
+                exc_info=True
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error creating Checkbox receipt for payment {payment.id}: {e}",
+                exc_info=True
+            )
             return None

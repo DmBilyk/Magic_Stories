@@ -63,7 +63,7 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             return ClothingItemListSerializer
         return ClothingItemDetailSerializer
 
-    # 🔧 FIX: Додаємо get_serializer_context для передачі request
+
     def get_serializer_context(self):
         """
         Extra context provided to the serializer class.

@@ -12,23 +12,15 @@ from .serializers import (
     AdditionalServiceSerializer,
     AdditionalServiceCreateUpdateSerializer,
     StudioImageSerializer,
-    StudioImageCreateUpdateSerializer
+    StudioImageCreateUpdateSerializer,
 )
 
 
 class LocationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing studios locations
-
-    Public endpoints (GET only):
-    - GET /api/locations/ - List all active locations
-    - GET /api/locations/{id}/ - Retrieve specific location
-
-    Admin endpoints (requires authentication):
-    - POST /api/locations/ - Create new location
-    - PUT/PATCH /api/locations/{id}/ - Update location
-    - DELETE /api/locations/{id}/ - Delete location
     """
+
     queryset = Location.objects.all()
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_active']
@@ -55,10 +47,8 @@ class LocationViewSet(viewsets.ModelViewSet):
     def search(self, request):
         """
         Search locations by name or description
-        Query param: ?q=searchterm
         """
         search_term = request.query_params.get('q', '')
-
         queryset = self.get_queryset()
 
         if search_term:
@@ -83,16 +73,8 @@ class LocationViewSet(viewsets.ModelViewSet):
 class AdditionalServiceViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing additional services
-
-    Public endpoints (GET only):
-    - GET /api/services/ - List all active services
-    - GET /api/services/{id}/ - Retrieve specific service
-
-    Admin endpoints (requires authentication):
-    - POST /api/services/ - Create new service
-    - PUT/PATCH /api/services/{id}/ - Update service
-    - DELETE /api/services/{id}/ - Delete service
     """
+
     queryset = AdditionalService.objects.all()
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_active', 'service_id']
@@ -119,7 +101,6 @@ class AdditionalServiceViewSet(viewsets.ModelViewSet):
     def by_type(self, request):
         """
         Get services grouped by type
-        Query param: ?type=clothing,makeup
         """
         service_types = request.query_params.get('type', '').split(',')
         service_types = [t.strip() for t in service_types if t.strip()]
@@ -136,13 +117,8 @@ class AdditionalServiceViewSet(viewsets.ModelViewSet):
 class StudioImageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing studios gallery images
-
-    All endpoints require authentication (admin only)
-    - GET /api/studios-images/ - List all images
-    - POST /api/studios-images/ - Upload new image
-    - PUT/PATCH /api/studios-images/{id}/ - Update image
-    - DELETE /api/studios-images/{id}/ - Delete image
     """
+
     queryset = StudioImage.objects.all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
@@ -162,13 +138,6 @@ class StudioImageViewSet(viewsets.ModelViewSet):
     def reorder(self, request):
         """
         Reorder images for a location
-        POST data: {
-            "location_id": "uuid",
-            "image_orders": [
-                {"image_id": "uuid", "order": 1},
-                {"image_id": "uuid", "order": 2}
-            ]
-        }
         """
         location_id = request.data.get('location_id')
         image_orders = request.data.get('image_orders', [])
@@ -176,19 +145,17 @@ class StudioImageViewSet(viewsets.ModelViewSet):
         if not location_id or not image_orders:
             return Response(
                 {'error': 'location_id and image_orders are required'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            # Verify location exists
             location = Location.objects.get(id=location_id)
         except Location.DoesNotExist:
             return Response(
                 {'error': 'Location not found'},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Update orders
         updated_count = 0
         for item in image_orders:
             image_id = item.get('image_id')
@@ -196,17 +163,16 @@ class StudioImageViewSet(viewsets.ModelViewSet):
 
             if image_id and order is not None:
                 try:
-                    image = StudioImage.objects.get(
-                        id=image_id,
-                        location=location
-                    )
+                    image = StudioImage.objects.get(id=image_id, location=location)
                     image.order = order
                     image.save()
                     updated_count += 1
                 except StudioImage.DoesNotExist:
                     continue
 
-        return Response({
-            'message': f'Updated order for {updated_count} images',
-            'updated_count': updated_count
-        })
+        return Response(
+            {
+                'message': f'Updated order for {updated_count} images',
+                'updated_count': updated_count,
+            }
+        )
