@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     StudioBookingViewSet,
     BookingAvailabilityViewSet,
-    BookingSettingsViewSet  # Все ще потрібен для .as_view()
+    BookingSettingsViewSet
 )
 
 app_name = 'bookings'

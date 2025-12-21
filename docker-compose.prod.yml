@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  # 1. База даних: закрили порт, volume залишили
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env.prod # Паролі беремо з окремого файлу!
+    restart: always # Якщо впаде - підніметься сама
+
+  # 2. Бекенд: Gunicorn замість runserver
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/app/staticfiles  # Сюди Django збере "статику" (CSS адмінки)
+      - media_volume:/app/media         # Сюди будуть падати фото
+    env_file:
+      - .env.prod
+    depends_on:
+      - db
+    restart: always
+
+  # 3. Фронтенд: У Prod режимі ми його не запускаємо як сервіс Node!
+  # Ми його "білдимо" окремо. Або (простіший варіант для початку):
+  # Ти білдиш фронт локально (npm run build) і копіюєш папку dist у Nginx.
+  # Але давай зробимо по-дорослому: Frontend білдиться всередині, а Nginx роздає.
+
+  # 4. Nginx: Головний вхід
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - static_volume:/app/staticfiles # Nginx бере статику Django звідси
+      - media_volume:/app/media        # Nginx бере фото звідси
+      # Тут ще треба додати volume для збілдженого React, якщо ми хочемо, щоб Nginx його роздавав
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  static_volume:  # Спільне сховище для CSS/JS бекенду
+  media_volume:   # Спільне сховище для Фото

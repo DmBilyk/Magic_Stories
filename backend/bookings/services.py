@@ -2,9 +2,12 @@ from datetime import datetime, date, time, timedelta
 from typing import List, Dict, Tuple, Optional
 from decimal import Decimal
 from django.db.models import Q
+import logging
 
 from .models import StudioBooking, BookingSettings
 from studios.models import AdditionalService, Location
+
+logger = logging.getLogger(__name__)
 
 
 class BookingAvailabilityService:
@@ -266,14 +269,39 @@ class BookingManagementService:
     def update_payment_status(booking: StudioBooking) -> bool:
         """Update booking status based on payment status."""
         if not booking.payment:
+            logger.warning(f"Booking {booking.id} has no payment attached")
             return False
 
-        if booking.payment.is_paid and booking.status == 'pending_payment':
-            booking.status = 'paid'
-            booking.save()
-            return True
+        try:
+            # Оновлюємо payment з БД на випадок, якщо він змінився
+            booking.payment.refresh_from_db()
 
-        return False
+            logger.info(
+                f"Checking payment for booking {booking.id}: "
+                f"is_paid={booking.payment.is_paid}, "
+                f"liqpay_status={booking.payment.liqpay_status}, "
+                f"current_booking_status={booking.status}"
+            )
+
+            # Якщо оплата успішна і статус все ще 'pending_payment'
+            if booking.payment.is_paid and booking.status == 'pending_payment':
+                booking.status = 'paid'
+                booking.save(update_fields=['status'])
+                logger.info(f"✅ Booking {booking.id} status updated to 'paid' via update_payment_status")
+                return True
+
+            # Якщо оплата не успішна і статус 'pending_payment', можна скасувати
+            if not booking.payment.is_paid and booking.status == 'pending_payment':
+                # Опціонально: автоматично скасовувати через деякий час
+                logger.info(f"Booking {booking.id} still pending payment, no action taken")
+                return False
+
+            logger.info(f"No status update needed for booking {booking.id}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error updating payment status for booking {booking.id}: {e}", exc_info=True)
+            return False
 
     @staticmethod
     def get_upcoming_bookings(

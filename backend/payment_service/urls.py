@@ -10,4 +10,7 @@ urlpatterns = [
 
     # URL, куди перенаправить користувача після оплати (result_url)
     path('payment-success/', views.payment_success_view, name='payment_success'),
+
+    path('<uuid:payment_id>/check-status/', views.check_payment_status_api, name='check_payment_status'),
+
 ]

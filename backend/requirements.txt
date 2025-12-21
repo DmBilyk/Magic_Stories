@@ -12,3 +12,4 @@ drf-yasg
 Pillow
 celery
 djangorestframework-simplejwt
+liqpay-sdk-python3==1.0.3

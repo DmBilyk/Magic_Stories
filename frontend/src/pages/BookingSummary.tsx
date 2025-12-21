@@ -119,30 +119,46 @@ export const BookingSummary = () => {
         notes: formData.notes || '',
       };
 
-      console.log('Sending correct request:', bookingRequest); // Тепер тут будуть правильні дані
+      console.log('Sending correct request:', bookingRequest);
       const response = await bookingService.create(bookingRequest);
 
-      if (response.payment?.liqpayData) {
+      console.log('Received response:', response);
+
+      // Перевіряємо наявність платіжних даних
+      if (response.payment?.liqpay_data?.data && response.payment?.liqpay_data?.signature) {
+        console.log('LiqPay data found, redirecting to payment...');
+
+        // Створюємо форму для редіректу на LiqPay
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = 'https://www.liqpay.ua/api/3/checkout';
         form.acceptCharset = 'utf-8';
+        form.style.display = 'none'; // Приховуємо форму
 
+        // Додаємо поле data
         const dataInput = document.createElement('input');
         dataInput.type = 'hidden';
         dataInput.name = 'data';
-        dataInput.value = response.payment.liqpayData.data;
+        dataInput.value = response.payment.liqpay_data.data;
         form.appendChild(dataInput);
 
+        // Додаємо поле signature
         const signatureInput = document.createElement('input');
         signatureInput.type = 'hidden';
         signatureInput.name = 'signature';
-        signatureInput.value = response.payment.liqpayData.signature;
+        signatureInput.value = response.payment.liqpay_data.signature;
         form.appendChild(signatureInput);
 
+        // Додаємо форму до body
         document.body.appendChild(form);
-        form.submit();
+
+        // Додаємо невелику затримку для гарантії, що форма в DOM
+        setTimeout(() => {
+          console.log('Submitting form to LiqPay...');
+          form.submit();
+        }, 100);
       } else {
+        console.warn('No LiqPay data in response, showing success directly');
         setBookingComplete(true);
         setTimeout(() => {
           resetBooking();

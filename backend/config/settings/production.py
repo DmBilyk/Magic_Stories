@@ -5,11 +5,11 @@ DEBUG = False
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # Allowed hosts must be explicitly set in production
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
 # CORS Configuration for Production
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
 
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -34,9 +34,14 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
+
+
+
+
+
 # Security Settings
 # Force HTTPS
-SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'True') == 'True'
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 

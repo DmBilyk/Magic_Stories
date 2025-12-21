@@ -217,8 +217,15 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         booking.payment = payment
         booking.save()
 
+        scheme = request.scheme
+
+        host = request.META.get('HTTP_X_FORWARDED_HOST') or request.get_host()
+
+        frontend_base_url = f"{scheme}://{host}"
+
         liqpay_service = LiqPayService()
-        payment_form_data = liqpay_service.generate_payment_form(payment)
+
+        payment_form_data = liqpay_service.generate_payment_form(payment, frontend_base_url)
 
         return Response({
             'booking': StudioBookingSerializer(booking).data,

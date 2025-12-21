@@ -11,6 +11,7 @@ from .services import CheckboxService
 logger = logging.getLogger(__name__)
 
 
+
 @shared_task(
     bind=True,
     max_retries=5,
@@ -77,3 +78,6 @@ def retry_checkbox_receipt(self, payment_id: str):
 
         # Повторна спроба з exponential backoff
         raise self.retry(exc=e)
+
+
+

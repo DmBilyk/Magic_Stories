@@ -4,6 +4,7 @@ import { Home } from './pages/Home';
 import { BookingForm } from './pages/BookingForm';
 import { ClothingRental } from './pages/ClothingRental';
 import { BookingSummary } from './pages/BookingSummary';
+import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <Route path="/booking" element={<BookingForm />} />
           <Route path="/clothing" element={<ClothingRental />} />
           <Route path="/summary" element={<BookingSummary />} />
+          <Route path="/payment/success" element={<PaymentSuccessPage />} />
         </Routes>
       </BrowserRouter>
     </BookingProvider>
