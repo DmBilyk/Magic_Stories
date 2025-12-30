@@ -6,6 +6,7 @@ from .views import (
     BookingSettingsViewSet
 )
 
+
 app_name = 'bookings'
 
 router = DefaultRouter()
@@ -13,8 +14,12 @@ router.register(r'', StudioBookingViewSet, basename='booking')
 router.register(r'availability', BookingAvailabilityViewSet, basename='availability')
 
 urlpatterns = [
-    # Явно додаємо URL для налаштувань (метод list)
+
+
+
     path('settings/', BookingSettingsViewSet.as_view({'get': 'list'}), name='booking_settings'),
 
     path('', include(router.urls)),
+
+
 ]

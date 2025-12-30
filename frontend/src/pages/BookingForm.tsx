@@ -17,6 +17,13 @@ import {
   isTimeSlotInPast,
   formatCurrency,
 } from '../utils/dateTime';
+import {
+  validatePhoneNumber,
+  validateEmail,
+  validateName,
+  validateNotes,
+  normalizePhoneNumber
+} from '../utils/validation';
 
 export const BookingForm = () => {
   const navigate = useNavigate();
@@ -122,14 +129,49 @@ export const BookingForm = () => {
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    if (!firstName.trim()) errors.firstName = "Ім'я обов'язкове";
-    if (!lastName.trim()) errors.lastName = "Прізвище обов'язкове";
-    if (!phone.trim()) errors.phone = "Номер телефону обов'язковий";
-    else if (!/^\+?[\d\s-()]+$/.test(phone)) errors.phone = 'Невірний формат номера телефону';
-    if (!email.trim()) errors.email = "Email обов'язковий";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Невірний формат email';
-    if (!bookingDate) errors.date = 'Будь ласка, оберіть дату';
-    if (!bookingTime) errors.time = 'Будь ласка, оберіть час';
+
+    // Валідація імені
+    const firstNameValidation = validateName(firstName, "Ім'я");
+    if (!firstNameValidation.valid) {
+      errors.firstName = firstNameValidation.message;
+    }
+
+    // Валідація прізвища
+    const lastNameValidation = validateName(lastName, "Прізвище");
+    if (!lastNameValidation.valid) {
+      errors.lastName = lastNameValidation.message;
+    }
+
+    // Валідація телефону
+    const phoneValidation = validatePhoneNumber(phone);
+    if (!phoneValidation.valid) {
+      errors.phone = phoneValidation.message;
+    }
+
+    // Валідація email
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      errors.email = emailValidation.message;
+    }
+
+    // Валідація дати
+    if (!bookingDate) {
+      errors.date = 'Будь ласка, оберіть дату';
+    }
+
+    // Валідація часу
+    if (!bookingTime) {
+      errors.time = 'Будь ласка, оберіть час';
+    }
+
+    // Валідація нотаток (опціонально)
+    if (notes.trim()) {
+      const notesValidation = validateNotes(notes);
+      if (!notesValidation.valid) {
+        errors.notes = notesValidation.message;
+      }
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -141,7 +183,21 @@ export const BookingForm = () => {
       return;
     }
 
-    setContactInfo({ firstName, lastName, phone, email, notes });
+    // Нормалізуємо дані перед збереженням
+    const normalizedPhone = normalizePhoneNumber(phone);
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedNotes = notes.trim();
+
+    setContactInfo({
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      phone: normalizedPhone,
+      email: normalizedEmail,
+      notes: normalizedNotes
+    });
+
     navigate('/clothing');
   };
 
@@ -452,7 +508,7 @@ export const BookingForm = () => {
                   className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
                     validationErrors.phone ? 'border-red-400' : 'border-slate-200'
                   }`}
-                  placeholder="+380..."
+                  placeholder="+380XXXXXXXXX"
                 />
                 {validationErrors.phone && (
                   <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.phone}</p>
@@ -487,11 +543,19 @@ export const BookingForm = () => {
               </label>
               <textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setValidationErrors((prev) => ({ ...prev, notes: '' }));
+                }}
                 rows={3}
-                className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none rounded-none"
+                className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none rounded-none ${
+                  validationErrors.notes ? 'border-red-400' : 'border-slate-200'
+                }`}
                 placeholder="Додаткові побажання..."
               />
+              {validationErrors.notes && (
+                <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.notes}</p>
+              )}
             </div>
           </section>
         </div>

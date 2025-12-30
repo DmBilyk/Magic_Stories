@@ -362,7 +362,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         # Формула: (ціна_за_годину * години) + послуги
         base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
         initial_total = base_cost + services_total
-        initial_deposit = initial_total * (settings.deposit_percentage / 100)
+        initial_deposit = (initial_total * settings.deposit_percentage) / Decimal('100.00')
 
         # Додаємо ці значення, щоб база даних не сварилася на NULL
         validated_data['total_amount'] = initial_total
@@ -491,3 +491,170 @@ class AdminBookingSerializer(serializers.ModelSerializer):
                     'location_id': 'Invalid or inactive location'
                 })
         return data
+
+
+
+
+class AdminBookingSerializer(serializers.ModelSerializer):
+    """Extended booking serializer for admin views with payment details."""
+
+    location = LocationBriefSerializer(read_only=True)
+    location_id = serializers.UUIDField(write_only=True, required=False)
+    additional_services = AdditionalServiceSerializer(many=True, read_only=True)
+    additional_service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False
+    )
+
+    # ✅ ДОДАНО: Підтримка clothing items
+    clothing_items = BookingClothingItemCreateSerializer(
+        many=True,
+        write_only=True,
+        required=False,
+        allow_empty=True
+    )
+    clothing_items_display = BookingClothingItemSerializer(
+        source='clothing_items',
+        many=True,
+        read_only=True
+    )
+
+    # ✅ ДОДАНО: Підтримка prop items
+    prop_items = BookingPropItemCreateSerializer(
+        many=True,
+        write_only=True,
+        required=False,
+        allow_empty=True
+    )
+    prop_items_display = BookingPropItemSerializer(
+        source='prop_items',
+        many=True,
+        read_only=True
+    )
+
+    end_time = serializers.SerializerMethodField()
+    payment_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StudioBooking
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_end_time(self, obj):
+        """Calculate and return booking end time."""
+        return obj.get_end_time()
+
+    def get_payment_details(self, obj):
+        """Return detailed payment information if available."""
+        if obj.payment:
+            return {
+                'payment_id': str(obj.payment.id),
+                'amount': str(obj.payment.amount),
+                'is_paid': obj.payment.is_paid,
+                'liqpay_status': obj.payment.liqpay_status,
+                'checkbox_receipt_id': obj.payment.checkbox_receipt_id,
+                'checkbox_fiscal_code': obj.payment.checkbox_fiscal_code,
+                'checkbox_status': obj.payment.checkbox_status
+            }
+        return None
+
+    def validate(self, data):
+        """Minimal validation for admin use - only validate location if provided."""
+        location_id = data.get('location_id')
+        if location_id:
+            try:
+                Location.objects.get(id=location_id, is_active=True)
+            except Location.DoesNotExist:
+                raise serializers.ValidationError({
+                    'location_id': 'Invalid or inactive location'
+                })
+        return data
+
+    # ✅✅✅ ДОДАНО: Метод create() для admin booking
+    def create(self, validated_data):
+        """Create admin booking with automatic price calculation from location."""
+        additional_service_ids = validated_data.pop('additional_service_ids', [])
+        clothing_items = validated_data.pop('clothing_items', [])
+        prop_items = validated_data.pop('prop_items', [])
+        location_id = validated_data.get('location_id')
+
+        settings = BookingSettings.get_settings()
+
+        # 1️⃣ Визначаємо ціну за годину з локації або налаштувань
+        try:
+            location = Location.objects.get(id=location_id, is_active=True)
+            validated_data['base_price_per_hour'] = location.hourly_rate
+        except Location.DoesNotExist:
+            validated_data['base_price_per_hour'] = settings.base_price_per_hour
+
+        # 2️⃣ Розраховуємо вартість послуг (НЕ може бути NULL)
+        services_total = Decimal('0.00')
+        services_to_add = []
+
+        if additional_service_ids:
+            services_to_add = AdditionalService.objects.filter(
+                id__in=additional_service_ids,
+                is_active=True
+            )
+            services_total = sum(service.price for service in services_to_add)
+
+        validated_data['services_total'] = services_total
+
+        # 3️⃣ Розраховуємо початкову загальну вартість (Оренда + Послуги)
+        base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
+        initial_total = base_cost + services_total
+
+        # 4️⃣ Встановлюємо deposit_percentage
+        validated_data['deposit_percentage'] = settings.deposit_percentage
+
+        # 5️⃣ Якщо адмін передав total_amount і deposit_amount явно - використовуємо їх
+        # Інакше - розраховуємо автоматично
+        if 'total_amount' not in validated_data:
+            validated_data['total_amount'] = initial_total
+
+        if 'deposit_amount' not in validated_data:
+            validated_data['deposit_amount'] = (
+                                                       validated_data['total_amount'] * settings.deposit_percentage
+                                               ) / Decimal('100.00')
+
+        # 6️⃣ Створюємо booking (INSERT в БД)
+        booking = StudioBooking.objects.create(**validated_data)
+
+        # 7️⃣ Прив'язуємо послуги (Many-to-Many)
+        if services_to_add:
+            booking.additional_services.set(services_to_add)
+
+        # 8️⃣ Обробка одягу та реквізиту (це змінить total_amount, якщо щось додано)
+        items_added = False
+
+        if clothing_items:
+            from clothing.services import ClothingBookingService
+            clothing_service = ClothingBookingService()
+            success, errors, clothing_cost = clothing_service.add_clothing_to_booking(
+                booking,
+                clothing_items
+            )
+            if success and clothing_cost > 0:
+                booking.total_amount += clothing_cost
+                items_added = True
+
+        if prop_items:
+            from props.services import PropBookingService
+            prop_service = PropBookingService()
+            success, errors, prop_cost = prop_service.add_props_to_booking(
+                booking,
+                prop_items
+            )
+            if success and prop_cost > 0:
+                booking.total_amount += prop_cost
+                items_added = True
+
+        # 9️⃣ Якщо додали одяг/реквізит, перераховуємо депозит і зберігаємо
+        if items_added:
+            booking.deposit_amount = (
+                    booking.total_amount * (booking.deposit_percentage / 100)
+            )
+            booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
+
+        return booking

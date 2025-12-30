@@ -15,12 +15,15 @@ from .serializers import (
     AvailableSlotSerializer,
     AdminBookingSerializer
 )
+from django.db import transaction, IntegrityError
 from studios.models import AdditionalService, Location
 from .services import (
     BookingAvailabilityService,
     BookingCalculationService,
     BookingManagementService
 )
+
+
 from payment_service.models import StudioPayment
 
 from payment_service.services import LiqPayService
@@ -28,7 +31,10 @@ from payment_service.services import LiqPayService
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
-@method_decorator(csrf_exempt, name='dispatch')
+
+import logging
+
+
 class BookingAvailabilityViewSet(viewsets.ViewSet):
     """Manage booking availability checks and slot queries."""
 
@@ -197,17 +203,15 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         """Create booking and initiate payment process."""
         serializer = self.get_serializer(data=request.data)
 
-        if not serializer.is_valid():
-            print("\n!!! VALIDATION ERRORS !!!")
-            print(serializer.errors)
-            print("Request Data:", request.data)
-            print("!!! END ERRORS !!!\n")
-            serializer.is_valid(raise_exception=True)
-
         serializer.is_valid(raise_exception=True)
 
-
-        booking = serializer.save()
+        try:
+            booking = serializer.save()
+        except IntegrityError as e:
+            return Response({
+                'error': 'This time slot was just booked by another user. Please choose another time.',
+                'code': 'BOOKING_CONFLICT'
+            }, status=status.HTTP_409_CONFLICT)
 
         payment = StudioPayment.objects.create(
             amount=booking.deposit_amount,
@@ -360,45 +364,32 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        serializer = AdminBookingSerializer(data=request.data)
+
+        serializer = StudioBookingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        settings = BookingSettings.get_settings()
-        if 'base_price_per_hour' not in serializer.validated_data:
-            serializer.validated_data['base_price_per_hour'] = settings.base_price_per_hour
-        if 'deposit_percentage' not in serializer.validated_data:
-            serializer.validated_data['deposit_percentage'] = settings.deposit_percentage
 
-        additional_service_ids = request.data.get('additional_service_ids', [])
+        booking = serializer.save()
 
-        booking = StudioBooking.objects.create(**serializer.validated_data)
 
-        if additional_service_ids:
-            services = AdditionalService.objects.filter(
-                id__in=additional_service_ids,
-                is_active=True
-            )
-            booking.additional_services.set(services)
-            booking.services_total = sum(service.price for service in services)
-
-        if 'total_amount' not in serializer.validated_data:
-            booking.total_amount = booking.calculate_total()
-        if 'deposit_amount' not in serializer.validated_data:
-            booking.deposit_amount = booking.calculate_deposit()
-
-        booking.save()
+        if request.data.get('status'):
+            booking.status = request.data.get('status')
+            booking.save(update_fields=['status'])
+            booking.save(update_fields=['status'])
 
         return Response(
-            AdminBookingSerializer(booking).data,
+            StudioBookingSerializer(booking).data,
             status=status.HTTP_201_CREATED
         )
 
     @action(detail=False, methods=['get'], url_path='location-bookings')
     def location_bookings(self, request):
-        """Get all bookings for specific location with date filtering (admin only)."""
-        if not request.user.is_staff:
+        """Get all bookings for specific location or ALL locations (admin only)."""
+
+
+        if not request.user.is_superuser:
             return Response(
-                {'error': 'Only staff can view location bookings'},
+                {'error': 'Only superusers can view location bookings'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -406,11 +397,6 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
-        if not location_id:
-            return Response(
-                {'error': 'location_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         try:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
@@ -421,11 +407,41 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        service = BookingManagementService()
-        bookings = service.get_location_bookings(location_id, start_date, end_date)
+
+        if location_id and location_id != 'all':
+            service = BookingManagementService()
+            bookings = service.get_location_bookings(location_id, start_date, end_date)
+        else:
+
+            bookings = StudioBooking.objects.all()
+            if start_date:
+                bookings = bookings.filter(booking_date__gte=start_date)
+            if end_date:
+                bookings = bookings.filter(booking_date__lte=end_date)
+
+            bookings = bookings.order_by('booking_date', 'booking_time')
 
         serializer = self.get_serializer(bookings, many=True)
         return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='mark-paid',
+        permission_classes=[IsAuthenticated]
+    )
+    def mark_paid(self, request, pk=None):
+        """Mark booking as paid (admin only)."""
+        if not request.user.is_staff:
+            return Response({'error': 'Only staff'}, status=status.HTTP_403_FORBIDDEN)
+
+        booking = self.get_object()
+        if booking.status != 'pending_payment':
+            return Response({'error': 'Booking must be pending_payment'}, status=status.HTTP_400_BAD_REQUEST)
+
+        booking.status = 'paid'
+        booking.save(update_fields=['status'])
+        return Response({'status': 'paid'})
 
 
 class BookingSettingsViewSet(viewsets.ViewSet):

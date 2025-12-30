@@ -1,50 +1,81 @@
 version: '3.9'
 
 services:
-  # 1. База даних: закрили порт, volume залишили
+  # ---------------------------------------------------------------------------
+  # DATABASE
+  # ---------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
+    restart: always  # Автоматичний перезапуск, якщо впаде або після перезавантаження VPS
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data
     env_file:
-      - .env.prod # Паролі беремо з окремого файлу!
-    restart: always # Якщо впаде - підніметься сама
+      - ./backend/.env.prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # 2. Бекенд: Gunicorn замість runserver
+  # ---------------------------------------------------------------------------
+  # BACKEND (Django + Gunicorn)
+  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
-    volumes:
-      - static_volume:/app/staticfiles  # Сюди Django збере "статику" (CSS адмінки)
-      - media_volume:/app/media         # Сюди будуть падати фото
-    env_file:
-      - .env.prod
-    depends_on:
-      - db
     restart: always
+    # Запускаємо Gunicorn. Переконайся, що config.wsgi відповідає назві твоєї папки з settings.py
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    volumes:
+      - static_volume:/app/staticfiles  # Сюди збирається collectstatic
+      - media_volume:/app/media         # Сюди користувачі вантажать фото
+    env_file:
+      - ./backend/.env.prod
+    depends_on:
+      db:
+        condition: service_healthy
 
-  # 3. Фронтенд: У Prod режимі ми його не запускаємо як сервіс Node!
-  # Ми його "білдимо" окремо. Або (простіший варіант для початку):
-  # Ти білдиш фронт локально (npm run build) і копіюєш папку dist у Nginx.
-  # Але давай зробимо по-дорослому: Frontend білдиться всередині, а Nginx роздає.
+  # ---------------------------------------------------------------------------
+  # FRONTEND BUILDER (Node.js helper)
+  # ---------------------------------------------------------------------------
+  # Цей контейнер запускається, збирає React/Vite і завершує роботу.
+  # Результат (папка dist) зберігається у frontend_build_volume.
+  frontend-builder:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_build_volume:/app/dist # Важливо! Vite за замовчуванням кладе білд в dist
+      - /app/node_modules # Щоб не забруднювати хост-систему папкою node_modules
+    # Команда: встановити залежності -> збілдити проєкт
+    command: sh -c "npm install && npm run build"
 
-  # 4. Nginx: Головний вхід
+  # ---------------------------------------------------------------------------
+  # NGINX (Proxy & Static Server)
+  # ---------------------------------------------------------------------------
   nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
+    image: nginx:alpine
+    restart: always
     ports:
       - "80:80"
+      # - "443:443" # Розкоментуєш, коли підключиш SSL
     volumes:
-      - static_volume:/app/staticfiles # Nginx бере статику Django звідси
-      - media_volume:/app/media        # Nginx бере фото звідси
-      # Тут ще треба додати volume для збілдженого React, якщо ми хочемо, щоб Nginx його роздавав
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      # Монтуємо том, куди frontend-builder поклав готові файли
+      - frontend_build_volume:/usr/share/nginx/html
+      # Монтуємо статику та медіа з бекенду
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     depends_on:
       - backend
+      - frontend-builder
 
+# ---------------------------------------------------------------------------
+# VOLUMES
+# ---------------------------------------------------------------------------
 volumes:
-  postgres_data:
-  static_volume:  # Спільне сховище для CSS/JS бекенду
-  media_volume:   # Спільне сховище для Фото
+  postgres_prod_data: # База даних (вічна)
+  static_volume:      # Django CSS/JS
+  media_volume:       # User uploads
+  frontend_build_volume: # React build files
