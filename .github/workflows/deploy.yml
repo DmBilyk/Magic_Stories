@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: PROD_ENV_FILE
 
     steps:
       - name: Checkout repository
