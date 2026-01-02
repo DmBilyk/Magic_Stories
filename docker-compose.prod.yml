@@ -1,12 +1,9 @@
 version: '3.9'
 
 services:
-  # ---------------------------------------------------------------------------
-  # DATABASE
-  # ---------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
-    restart: always  # Автоматичний перезапуск, якщо впаде або після перезавантаження VPS
+    restart: always
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     env_file:
@@ -17,65 +14,96 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------------------
-  # BACKEND (Django + Gunicorn)
-  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: always
-    # Запускаємо Gunicorn. Переконайся, що config.wsgi відповідає назві твоєї папки з settings.py
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    command: sh -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     volumes:
-      - static_volume:/app/staticfiles  # Сюди збирається collectstatic
-      - media_volume:/app/media         # Сюди користувачі вантажать фото
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      # - ./backend/logs:/app/logs <--- ЦЕ БІЛЬШЕ НЕ ПОТРІБНО
     env_file:
       - ./backend/.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
     depends_on:
       db:
         condition: service_healthy
+      redis: # Не забудьте додати залежність від Redis
+        condition: service_started
+# ---------------------------------------------------------------------------
+  # CELERY WORKER (Виконує важкі завдання)
+  # ---------------------------------------------------------------------------
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    # Запускаємо worker для обробки черги
+    command: celery -A config worker -l info
+    volumes:
+      - media_volume:/app/media
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+    depends_on:
+      - redis
+      - db
+      - backend
 
   # ---------------------------------------------------------------------------
-  # FRONTEND BUILDER (Node.js helper)
+  # CELERY BEAT (Планувальник періодичних завдань)
   # ---------------------------------------------------------------------------
-  # Цей контейнер запускається, збирає React/Vite і завершує роботу.
-  # Результат (папка dist) зберігається у frontend_build_volume.
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    # Запускаємо beat для розкладу (crontab)
+    command: celery -A config beat -l info
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+    depends_on:
+      - redis
+      - db
+      - backend
+
   frontend-builder:
     image: node:20-alpine
     working_dir: /app
     volumes:
       - ./frontend:/app
-      - frontend_build_volume:/app/dist # Важливо! Vite за замовчуванням кладе білд в dist
-      - /app/node_modules # Щоб не забруднювати хост-систему папкою node_modules
-    # Команда: встановити залежності -> збілдити проєкт
+      - frontend_build_volume:/app/dist
+      - /app/node_modules
     command: sh -c "npm install && npm run build"
 
-  # ---------------------------------------------------------------------------
-  # NGINX (Proxy & Static Server)
-  # ---------------------------------------------------------------------------
   nginx:
     image: nginx:alpine
     restart: always
     ports:
       - "80:80"
-      # - "443:443" # Розкоментуєш, коли підключиш SSL
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
-      # Монтуємо том, куди frontend-builder поклав готові файли
       - frontend_build_volume:/usr/share/nginx/html
-      # Монтуємо статику та медіа з бекенду
       - static_volume:/app/staticfiles
       - media_volume:/app/media
     depends_on:
       - backend
-      - frontend-builder
-
-# ---------------------------------------------------------------------------
-# VOLUMES
-# ---------------------------------------------------------------------------
+      frontend-builder:
+        condition: service_completed_successfully # Чекаємо завершення білда!
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis_data:/data
 volumes:
-  postgres_prod_data: # База даних (вічна)
-  static_volume:      # Django CSS/JS
-  media_volume:       # User uploads
-  frontend_build_volume: # React build files
+  postgres_prod_data:
+  static_volume:
+  media_volume:
+  frontend_build_volume:
+  redis_data:

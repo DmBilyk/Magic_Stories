@@ -1,4 +1,5 @@
 from .base import *
+import sys
 
 # SECURITY WARNING: keep the secret key used in production secret!
 DEBUG = False
@@ -72,8 +73,55 @@ CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
 DATABASES['default']['CONN_MAX_AGE'] = 600
 
 # Logging - Production level
-LOGGING['loggers']['django']['level'] = 'WARNING'
-LOGGING['loggers']['payment_service']['level'] = 'INFO'
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        # Цей хендлер виводить все в стандартний потік виводу (stdout)
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        # Логер для Django (загальний)
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        # Логер для вашого сервісу оплати
+        'payment_service': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        # Можна додати інші додатки тут, наприклад 'bookings'
+        'bookings': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        # Ловимо помилки Gunicorn, якщо вони не перехоплюються Django
+        'gunicorn': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
 
 # Email configuration for production (ensure proper SMTP settings)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
