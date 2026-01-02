@@ -80,6 +80,8 @@ services:
       - ./frontend:/app
       - frontend_build_volume:/app/dist
       - /app/node_modules
+    environment:
+      - VITE_API_URL=http://5.180.183.170/api
     command: sh -c "npm install && npm run build"
 
   nginx:
