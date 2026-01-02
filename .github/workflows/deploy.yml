@@ -43,7 +43,9 @@ jobs:
             
             # 5. Створюємо файл .env.prod із секрету GitHub
             # Це безпечно записує ваші ключі на сервер
-            echo "${{ secrets.PROD_ENV_FILE }}" > ./backend/.env.prod
+            cat << 'EOF' > ./backend/.env.prod
+            ${{ secrets.PROD_ENV_FILE }}
+            EOF
             
             # 6. Перезапускаємо Docker
             echo "Rebuilding and restarting containers..."
