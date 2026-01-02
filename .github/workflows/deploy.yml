@@ -1,0 +1,58 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main  # Запускати тільки при пуші в гілку main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 15m # Тайм-аут 15 хвилин, бо перший білд може бути довгим
+          script: |
+            # 1. Зупиняємо скрипт при будь-якій помилці
+            set -e
+            
+            # 2. Перевіряємо, чи існує папка проекту, якщо ні - клонуємо
+
+            if [ ! -d "app" ]; then
+              echo "Project folder not found. Cloning..."
+              git clone git@github.com:DmBilyk/Magic_Stories.git app
+            fi
+
+            # 3. Переходимо в папку
+            cd app
+            
+            # 4. Отримуємо свіжий код
+            echo "Pulling latest code..."
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # 5. Створюємо файл .env.prod із секрету GitHub
+            # Це безпечно записує ваші ключі на сервер
+            echo "${{ secrets.PROD_ENV_FILE }}" > ./backend/.env.prod
+            
+            # 6. Перезапускаємо Docker
+            echo "Rebuilding and restarting containers..."
+            # Вимикаємо старі контейнери
+            docker compose -f docker-compose.prod.yml down
+            
+            # Збираємо нові (--build) і запускаємо у фоні (-d)
+            docker compose -f docker-compose.prod.yml up -d --build
+            
+            # 7. Очищаємо сміття (старі образи, що займають місце)
+            docker image prune -f
+            
+            echo "Deploy successful!"
