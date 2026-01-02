@@ -43,8 +43,8 @@ CORS_ALLOW_HEADERS = [
 # Security Settings
 # Force HTTPS
 SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'True') == 'True'
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
 
 # Additional Security Headers
 SECURE_BROWSER_XSS_FILTER = True
@@ -52,9 +52,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # HTTP Strict Transport Security (HSTS)
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+SECURE_HSTS_SECONDS = 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
 # Secure Proxy SSL Header (if behind a reverse proxy like Nginx)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -67,7 +67,7 @@ SESSION_COOKIE_AGE = 86400
 # CSRF Security
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
+
 
 # Database connection pooling (optional but recommended)
 DATABASES['default']['CONN_MAX_AGE'] = 600
