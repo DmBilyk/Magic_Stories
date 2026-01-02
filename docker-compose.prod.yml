@@ -93,9 +93,10 @@ services:
       - static_volume:/app/staticfiles
       - media_volume:/app/media
     depends_on:
-      - backend
+      backend: # <--- Прибрали тире, додали двокрапку
+        condition: service_started
       frontend-builder:
-        condition: service_completed_successfully # Чекаємо завершення білда!
+        condition: service_completed_successfully
   redis:
     image: redis:7-alpine
     restart: always
