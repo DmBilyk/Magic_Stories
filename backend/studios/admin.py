@@ -4,22 +4,19 @@ from .models import Location, AdditionalService, StudioImage
 
 
 class StudioImageInline(admin.TabularInline):
-    """Inline admin for studios gallery images"""
     model = StudioImage
     extra = 1
-    fields = ['image_url', 'caption', 'order', 'preview_image']
+
+    fields = ['image', 'caption', 'order', 'preview_image']
     readonly_fields = ['preview_image']
 
     def preview_image(self, obj):
-        """Display image preview"""
-        if obj.image_url:
+        if obj.image:
             return format_html(
                 '<img src="{}" style="max-width: 100px; max-height: 100px;" />',
-                obj.image_url
+                obj.image.url
             )
         return "No image"
-
-    preview_image.short_description = 'Preview'
 
 
 @admin.register(Location)
@@ -51,7 +48,7 @@ class LocationAdmin(admin.ModelAdmin):
             'description': 'Enter amenities as comma-separated values (e.g., "Natural Light, Backdrop System, Props")'
         }),
         ('Main Image', {
-            'fields': ('image_url', 'preview_image')
+            'fields': ('image', 'preview_image')
         }),
         ('Status', {
             'fields': ('is_active',)
@@ -63,10 +60,10 @@ class LocationAdmin(admin.ModelAdmin):
 
     def preview_image(self, obj):
         """Display main image preview in admin"""
-        if obj.image_url:
+        if obj.image:
             return format_html(
                 '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
-                obj.image_url
+                obj.image
             )
         return "No image"
 
@@ -147,19 +144,16 @@ class StudioImageAdmin(admin.ModelAdmin):
             'fields': ('location',)
         }),
         ('Image', {
-            'fields': ('image_url', 'preview_image', 'caption', 'order')
+            'fields': ('image', 'preview_image', 'caption', 'order')
         }),
     )
 
     readonly_fields = ['preview_image', 'created_at']
 
     def preview_image(self, obj):
-        """Display image preview"""
-        if obj.image_url:
+        if obj.image:
             return format_html(
                 '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
-                obj.image_url
+                obj.image.url
             )
         return "No image"
-
-    preview_image.short_description = 'Preview'

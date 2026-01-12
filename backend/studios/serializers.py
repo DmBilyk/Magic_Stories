@@ -3,24 +3,20 @@ from .models import Location, AdditionalService, StudioImage
 
 
 class StudioImageSerializer(serializers.ModelSerializer):
-    """Serializer for studios gallery images"""
-
     class Meta:
         model = StudioImage
-        fields = ['id', 'image_url', 'caption', 'order', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'image', 'caption', 'order', 'created_at']
 
     def to_representation(self, instance):
-        """Convert to camelCase for frontend"""
         data = super().to_representation(instance)
+
         return {
             'id': str(data['id']),
-            'imageUrl': data['image_url'],
-            'caption': data['caption'],
-            'order': data['order'],
-            'createdAt': data['created_at'],
+            'imageUrl': data.get('image'),
+            'caption': data.get('caption'),
+            'order': data.get('order'),
+            'createdAt': data.get('created_at'),
         }
-
 
 class LocationSerializer(serializers.ModelSerializer):
     """Serializer for Location model"""
@@ -34,7 +30,7 @@ class LocationSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'hourly_rate',
-            'image_url',
+            'image',
             'address',
             'capacity',
             'amenities',
@@ -58,7 +54,7 @@ class LocationSerializer(serializers.ModelSerializer):
             'name': data['name'],
             'description': data['description'],
             'hourlyRate': float(data['hourly_rate']),
-            'imageUrl': data['image_url'],
+            'imageUrl': data['image'],
             'address': data['address'],
             'capacity': data['capacity'],
             'amenities': data['amenities_list'],
@@ -78,7 +74,7 @@ class LocationCreateUpdateSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'hourly_rate',
-            'image_url',
+            'image',
             'address',
             'capacity',
             'amenities',
@@ -165,7 +161,7 @@ class StudioImageCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudioImage
-        fields = ['location_id', 'image_url', 'caption', 'order']
+        fields = ['location_id', 'image', 'caption', 'order']
 
     def validate_location_id(self, value):
         """Validate location exists and is active"""

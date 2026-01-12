@@ -15,7 +15,12 @@ class Location(models.Model):
         validators=[MinValueValidator(Decimal('0.01'))],
         verbose_name="Hourly Rate (UAH)"
     )
-    image_url = models.URLField(max_length=500, blank=True, verbose_name="Image URL")
+    image = models.ImageField(
+        upload_to='locations/',
+        null=True,
+        blank=True,
+        verbose_name="Main Image"
+    )
     address = models.TextField(blank=True, verbose_name="Address")
     capacity = models.PositiveIntegerField(
         default=1,
@@ -99,7 +104,10 @@ class StudioImage(models.Model):
         related_name='gallery_images',
         verbose_name="Studio Location"
     )
-    image_url = models.URLField(max_length=500, verbose_name="Image URL")
+    image = models.ImageField(
+        upload_to='studio_gallery/',
+        verbose_name="Image"
+    )
     caption = models.CharField(max_length=200, blank=True, verbose_name="Caption")
     order = models.PositiveIntegerField(
         default=0,
