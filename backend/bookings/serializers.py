@@ -30,7 +30,7 @@ class LocationBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Location
-        fields = ['id', 'name', 'hourly_rate', 'image_url']
+        fields = ['id', 'name', 'hourly_rate', 'image']
         read_only_fields = ['id']
 
 
