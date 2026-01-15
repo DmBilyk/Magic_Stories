@@ -1,7 +1,9 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { Location, AdditionalService, CartClothingItem, CartPropItem } from '../types';
 
-// 1. Define the interface for contact info
+// Ключ, за яким ми будемо зберігати дані в браузері
+const STORAGE_KEY = 'magic_stories_booking_state';
+
 export interface ContactInfo {
   firstName: string;
   lastName: string;
@@ -25,7 +27,6 @@ interface BookingContextType {
   setClothingCart: (items: CartClothingItem[]) => void;
   propsCart: CartPropItem[];
   setPropsCart: (items: CartPropItem[]) => void;
-  // New fields
   contactInfo: ContactInfo;
   setContactInfo: (info: ContactInfo) => void;
   resetBooking: () => void;
@@ -34,24 +35,78 @@ interface BookingContextType {
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
 
 export const BookingProvider = ({ children }: { children: ReactNode }) => {
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
-  const [bookingDate, setBookingDate] = useState('');
-  const [bookingTime, setBookingTime] = useState('');
-  const [durationHours, setDurationHours] = useState(2);
-  const [selectedServices, setSelectedServices] = useState<AdditionalService[]>([]);
-  const [clothingCart, setClothingCart] = useState<CartClothingItem[]>([]);
-  const [propsCart, setPropsCart] = useState<CartPropItem[]>([]);
+  // 1. Функція для безпечного читання з localStorage
+  const loadState = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to load booking state', e);
+      return null;
+    }
+  };
 
-  // 2. Initialize contact info state
-  const [contactInfo, setContactInfo] = useState<ContactInfo>({
-    firstName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    notes: '',
-  });
+  const savedState = loadState();
+
+  // 2. Ініціалізуємо стейти. Якщо є збережені дані — беремо їх, якщо ні — дефолтні.
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(
+    savedState?.selectedLocation || null
+  );
+  const [bookingDate, setBookingDate] = useState<string>(
+    savedState?.bookingDate || ''
+  );
+  const [bookingTime, setBookingTime] = useState<string>(
+    savedState?.bookingTime || ''
+  );
+  const [durationHours, setDurationHours] = useState<number>(
+    savedState?.durationHours || 2
+  );
+  const [selectedServices, setSelectedServices] = useState<AdditionalService[]>(
+    savedState?.selectedServices || []
+  );
+  const [clothingCart, setClothingCart] = useState<CartClothingItem[]>(
+    savedState?.clothingCart || []
+  );
+  const [propsCart, setPropsCart] = useState<CartPropItem[]>(
+    savedState?.propsCart || []
+  );
+
+  const [contactInfo, setContactInfo] = useState<ContactInfo>(
+    savedState?.contactInfo || {
+      firstName: '',
+      lastName: '',
+      phone: '',
+      email: '',
+      notes: '',
+    }
+  );
+
+  // 3. Ефект для автоматичного збереження при будь-якій зміні
+  useEffect(() => {
+    const stateToSave = {
+      selectedLocation,
+      bookingDate,
+      bookingTime,
+      durationHours,
+      selectedServices,
+      clothingCart,
+      propsCart,
+      contactInfo,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+  }, [
+    selectedLocation,
+    bookingDate,
+    bookingTime,
+    durationHours,
+    selectedServices,
+    clothingCart,
+    propsCart,
+    contactInfo,
+  ]);
 
   const resetBooking = () => {
+    // Скидаємо стейт
     setSelectedLocation(null);
     setBookingDate('');
     setBookingTime('');
@@ -59,7 +114,6 @@ export const BookingProvider = ({ children }: { children: ReactNode }) => {
     setSelectedServices([]);
     setClothingCart([]);
     setPropsCart([]);
-    // 3. Reset contact info
     setContactInfo({
       firstName: '',
       lastName: '',
@@ -67,6 +121,8 @@ export const BookingProvider = ({ children }: { children: ReactNode }) => {
       email: '',
       notes: '',
     });
+    // Очищаємо localStorage
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
@@ -86,8 +142,8 @@ export const BookingProvider = ({ children }: { children: ReactNode }) => {
         setClothingCart,
         propsCart,
         setPropsCart,
-        contactInfo,     // Exposed
-        setContactInfo,  // Exposed
+        contactInfo,
+        setContactInfo,
         resetBooking,
       }}
     >
