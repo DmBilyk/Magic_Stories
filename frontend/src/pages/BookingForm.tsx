@@ -7,6 +7,7 @@ import {
 import { useBooking } from '../context/BookingContext';
 import { bookingService, serviceAPI, availabilityService } from '../services/api';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { BookingFormSkeleton } from '../components/Skeleton';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { DatePicker } from '../components/DatePicker';
 import type { AdditionalService, BookingSettings, TimeSlot } from '../types';
@@ -257,11 +258,7 @@ export const BookingForm = () => {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <BookingFormSkeleton />;
   }
 
   if (!settings || !selectedLocation) return null;
@@ -392,8 +389,10 @@ export const BookingForm = () => {
               </div>
 
               {checkingSlots ? (
-                <div className="py-8 flex justify-center">
-                  <LoadingSpinner />
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <div key={i} className="h-[46px] bg-slate-100 animate-pulse border border-slate-200" />
+                  ))}
                 </div>
               ) : availableSlots.length === 0 ? (
                 <div className="text-center py-8 bg-slate-50 border border-slate-100">

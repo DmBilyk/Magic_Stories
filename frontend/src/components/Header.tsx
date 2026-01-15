@@ -1,17 +1,34 @@
 import { useState } from 'react';
 import { Menu, X, Calendar } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const scrollToSection = (sectionId: string) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-      setIsMenuOpen(false);
+
+    if (location.pathname !== '/') {
+      navigate('/');
+
+      setTimeout(() => {
+        const element = document.getElementById(sectionId);
+        if (element) element.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      const element = document.getElementById(sectionId);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+        setIsMenuOpen(false);
+      }
     }
   };
 
+  const handleBookingClick = () => {
+    navigate('/booking');
+    setIsMenuOpen(false);
+  };
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-neutral-200">
       <div className="max-w-7xl mx-auto px-6">
@@ -41,7 +58,7 @@ export const Header = () => {
             ))}
 
             <button
-              onClick={() => scrollToSection('booking')}
+              onClick={handleBookingClick}
               className="px-8 py-3 bg-black text-white text-sm font-light tracking-wider hover:bg-neutral-800 transition-colors uppercase"
             >
               Забронювати
@@ -76,7 +93,7 @@ export const Header = () => {
                 </button>
               ))}
               <button
-                onClick={() => scrollToSection('booking')}
+                onClick={handleBookingClick}
                 className="w-full py-4 bg-black text-white font-light tracking-wider hover:bg-neutral-800 transition-colors text-sm uppercase mt-4"
               >
                 Забронювати
