@@ -362,7 +362,11 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         # Формула: (ціна_за_годину * години) + послуги
         base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
         initial_total = base_cost + services_total
-        initial_deposit = (initial_total * settings.deposit_percentage) / Decimal('100.00')
+
+
+        half_total = initial_total * Decimal('0.50')
+        max_deposit = validated_data['base_price_per_hour']
+        initial_deposit = min(half_total, max_deposit)
 
         # Додаємо ці значення, щоб база даних не сварилася на NULL
         validated_data['total_amount'] = initial_total
@@ -399,9 +403,12 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 booking.total_amount += prop_cost
                 items_added = True
 
-        # Якщо додали одяг/реквізит, перераховуємо депозит і зберігаємо
+
         if items_added:
-            booking.deposit_amount = booking.total_amount * (booking.deposit_percentage / 100)
+
+            half_total = booking.total_amount * Decimal('0.50')
+            max_deposit = booking.base_price_per_hour
+            booking.deposit_amount = min(half_total, max_deposit)
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
         # Якщо оплата вже створена (що малоймовірно в create, але можливо), оновлюємо її
@@ -614,9 +621,10 @@ class AdminBookingSerializer(serializers.ModelSerializer):
             validated_data['total_amount'] = initial_total
 
         if 'deposit_amount' not in validated_data:
-            validated_data['deposit_amount'] = (
-                                                       validated_data['total_amount'] * settings.deposit_percentage
-                                               ) / Decimal('100.00')
+
+            half_total = validated_data['total_amount'] * Decimal('0.50')
+            max_deposit = validated_data['base_price_per_hour']
+            validated_data['deposit_amount'] = min(half_total, max_deposit)
 
         # 6️⃣ Створюємо booking (INSERT в БД)
         booking = StudioBooking.objects.create(**validated_data)
@@ -650,11 +658,12 @@ class AdminBookingSerializer(serializers.ModelSerializer):
                 booking.total_amount += prop_cost
                 items_added = True
 
-        # 9️⃣ Якщо додали одяг/реквізит, перераховуємо депозит і зберігаємо
+
         if items_added:
-            booking.deposit_amount = (
-                    booking.total_amount * (booking.deposit_percentage / 100)
-            )
+
+            half_total = booking.total_amount * Decimal('0.50')
+            max_deposit = booking.base_price_per_hour
+            booking.deposit_amount = min(half_total, max_deposit)
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
         return booking
