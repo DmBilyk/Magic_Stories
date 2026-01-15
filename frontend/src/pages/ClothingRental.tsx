@@ -7,6 +7,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
 import type { ClothingCategory, ClothingItem } from '../types';
 import { formatCurrency } from '../utils/dateTime';
+import { ClothingRentalSkeleton } from '../components/Skeleton';
 
 export const ClothingRental = () => {
   const navigate = useNavigate();
@@ -153,12 +154,8 @@ export const ClothingRental = () => {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
+  return <ClothingRentalSkeleton />;
+}
 
   return (
     <div className="min-h-screen bg-white">

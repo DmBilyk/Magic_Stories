@@ -8,6 +8,7 @@ import { ErrorMessage } from '../components/ErrorMessage';
 import { Header } from '../components/Header';
 import type { Location } from '../types';
 import { formatCurrency } from '../utils/dateTime';
+import { HomeSkeleton } from '../components/Skeleton';
 
 export const Home = () => {
   const [mainLocation, setMainLocation] = useState<Location | null>(null);
@@ -43,7 +44,7 @@ export const Home = () => {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-white"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <HomeSkeleton />;
   if (error || !mainLocation) return <div className="min-h-screen flex items-center justify-center bg-white p-4"><ErrorMessage message={error || 'Студія наразі недоступна'} /></div>;
 
   const gallery = [
