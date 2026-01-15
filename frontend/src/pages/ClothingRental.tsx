@@ -52,11 +52,21 @@ export const ClothingRental = () => {
   };
 
   const filteredItems = items.filter((item) => {
-    const matchesCategory = !selectedCategory || item.category.id === selectedCategory;
+
+    const matchesCategory = !selectedCategory || item.category?.id === selectedCategory;
+
+
+    const query = searchQuery.toLowerCase().trim();
+
+
+    const name = (item.name || '').toLowerCase();
+    const description = (item.description || '').toLowerCase();
+
     const matchesSearch =
-      !searchQuery ||
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
+      !query ||
+      name.includes(query) ||
+      description.includes(query);
+
     return matchesCategory && matchesSearch;
   });
 

@@ -127,6 +127,46 @@ export const BookingForm = () => {
     }
   };
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+
+
+    if (value.length < 4) {
+      setPhone('+380');
+      return;
+    }
+
+
+    const numericValue = value.replace(/[^\d+]/g, '');
+
+
+    const formattedValue = numericValue.startsWith('+') ? numericValue : `+${numericValue}`;
+
+
+    if (!formattedValue.startsWith('+380')) {
+
+       if (formattedValue.startsWith('+0')) {
+         setPhone('+380' + formattedValue.substring(2));
+       } else {
+         setPhone('+380');
+       }
+       return;
+    }
+
+
+    if (formattedValue.length <= 13) {
+      setPhone(formattedValue);
+      setValidationErrors((prev) => ({ ...prev, phone: '' }));
+    }
+  };
+
+
+  const handlePhoneFocus = () => {
+    if (!phone) {
+      setPhone('+380');
+    }
+  };
+
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
@@ -498,18 +538,26 @@ export const BookingForm = () => {
                 <label className="text-sm font-semibold text-slate-700 mb-2 block uppercase tracking-wide text-xs">
                   Телефон
                 </label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => {
-                    setPhone(e.target.value);
-                    setValidationErrors((prev) => ({ ...prev, phone: '' }));
-                  }}
-                  className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
-                    validationErrors.phone ? 'border-red-400' : 'border-slate-200'
-                  }`}
-                  placeholder="+380XXXXXXXXX"
-                />
+                <div className="relative">
+                  <input
+                    type="tel"
+                    value={phone}
+                    onFocus={handlePhoneFocus}
+                    onChange={handlePhoneChange}
+                    className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none tracking-wider font-medium ${
+                      validationErrors.phone ? 'border-red-400' : 'border-slate-200'
+                    }`}
+                    placeholder="+380XXXXXXXXX"
+                    maxLength={13}
+                  />
+                  {/* Підказка кількості цифр */}
+                  {phone.length > 4 && phone.length < 13 && (
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                        ще {13 - phone.length} цифр
+                     </div>
+                  )}
+                </div>
+
                 {validationErrors.phone && (
                   <p className="text-red-600 text-sm mt-2 ml-1">{validationErrors.phone}</p>
                 )}
