@@ -1,4 +1,7 @@
 import { API_ENDPOINTS, fetchAPI } from '../config/api';
+
+import { assertAllParamsWithErrors } from '../utils/validation';
+
 import type {
   Location,
   AdditionalService,
@@ -11,6 +14,7 @@ import type {
   BookingRequest,
   BookingResponse,
   BookingSettings,
+  AvailabilityParams,
 } from '../types';
 
 
@@ -143,31 +147,45 @@ export const clothingService = {
     return toCamelCase(data) as ClothingItem;
   },
 
-  checkAvailability: async (
-    itemId: string,
-    bookingDate: string,
-    bookingTime: string,
-    durationHours: number,
-    quantity: number
-  ) => {
-    if (!itemId || !bookingDate || !bookingTime || !durationHours || !quantity) {
-      throw new Error('Missing required parameters for availability check');
+  checkAvailability: async (params: AvailabilityParams) => {
+
+    const requiredParams = ['itemId', 'bookingDate', 'bookingTime', 'durationHours', 'quantity'];
+
+    const validationResult = assertAllParamsWithErrors(params, requiredParams);
+
+    if (!validationResult.isValid) {
+      const errorMessages = validationResult.errors
+        .map((error) => error.errorMessage)
+        .join("; ");
+
+      const error = new Error(`Validation failed: ${errorMessages}`);
+
+      console.error(
+        `${new Date().toISOString()} - Validation error for item ${params.itemId}:`,
+        errorMessages
+      );
+      throw error;
     }
 
-    const formattedDate = bookingDate.includes('T') ? bookingDate.split('T')[0] : bookingDate;
+
+    const formattedDate = params.bookingDate.includes('T')
+      ? params.bookingDate.split('T')[0]
+      : params.bookingDate;
+
 
     const payload = {
-      clothing_item_id: itemId,
+      clothing_item_id: params.itemId,
       booking_date: formattedDate,
-      booking_time: bookingTime,
-      duration_hours: durationHours,
-      quantity,
+      booking_time: params.bookingTime,
+      duration_hours: params.durationHours,
+      quantity: params.quantity,
     };
 
-    console.log('Checking clothing item availability with payload:', payload);
+    console.log(`${new Date().toISOString()} - Checking availability logic:`, payload);
+
 
     const data = await fetchAPI<any>(
-      `${API_ENDPOINTS.clothingItems}${itemId}/check-availability/`,
+      `${API_ENDPOINTS.clothingItems}${params.itemId}/check-availability/`,
       {
         method: 'POST',
         body: JSON.stringify(payload),

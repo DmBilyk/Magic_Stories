@@ -97,13 +97,14 @@ export const ClothingRental = () => {
       const formattedDate = bookingDate.includes('T') ? bookingDate.split('T')[0] : bookingDate;
       const formattedTime = bookingTime.includes(':') ? bookingTime.substring(0, 5) : bookingTime;
 
-      const availabilityCheck = await clothingService.checkAvailability(
-        item.id,
-        formattedDate,
-        formattedTime,
-        durationHours,
-        newQuantity
-      );
+
+    const availabilityCheck = await clothingService.checkAvailability({
+      itemId: item.id,
+      bookingDate: formattedDate,
+      bookingTime: formattedTime,
+      durationHours: durationHours,
+      quantity: newQuantity
+    });
 
       if (!availabilityCheck.available) {
         setError(availabilityCheck.message);

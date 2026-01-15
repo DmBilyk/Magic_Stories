@@ -182,3 +182,23 @@ export interface BookingSettings {
   isBookingEnabled: boolean;
   maintenanceMessage: string;
 }
+
+export interface AvailabilityParams {
+  itemId: string;
+  bookingDate: string;
+  bookingTime: string;
+  durationHours: number;
+  quantity: number;
+}
+
+export interface ValidationError {
+  paramName: string;
+  errorMessage: string;
+}
+
+export interface AssertAllParamsWithErrorsResult<T> {
+  isValid: boolean;
+  missingParams: string[];
+  params: T;
+  errors: ValidationError[];
+}

@@ -1,14 +1,6 @@
-// src/utils/validation.ts
+import type { AssertAllParamsWithErrorsResult, ValidationError } from '../types';
 
-/**
- * Валідація українського номера телефону
- * Підтримує формати:
- * - +380XXXXXXXXX
- * - 380XXXXXXXXX
- * - 0XXXXXXXXX
- * - +38 (0XX) XXX-XX-XX
- * - +38 0XX XXX XX XX
- */
+
 export const validatePhoneNumber = (phone: string): { valid: boolean; message: string } => {
   if (!phone || phone.trim().length === 0) {
     return { valid: false, message: "Номер телефону обов'язковий" };
@@ -253,3 +245,37 @@ export const validateBookingForm = (data: BookingFormData): {
     normalizedData: Object.keys(errors).length === 0 ? normalizedData : undefined
   };
 };
+
+export function assertAllParamsWithErrors<T extends Record<string, any>>(
+  params: T,
+  requiredParams: string[],
+): AssertAllParamsWithErrorsResult<T> {
+
+  const validationErrors: ValidationError[] = [];
+  const missingParams: string[] = [];
+
+  for (const param of requiredParams) {
+    const value = params[param];
+
+
+    const isInvalidString = typeof value === "string" && value.trim() === "";
+
+
+    const isValid = value !== undefined && value !== null && !isInvalidString;
+
+    if (!isValid) {
+      missingParams.push(param);
+      validationErrors.push({
+        paramName: param,
+        errorMessage: `Missing or invalid parameter: ${param}`,
+      });
+    }
+  }
+
+  return {
+    isValid: missingParams.length === 0,
+    missingParams,
+    params,
+    errors: validationErrors,
+  };
+}
