@@ -7,6 +7,7 @@ import { BookingSummary } from './pages/BookingSummary';
 import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
 import AdminBookingPanel from './pages/adminPage';
 import AdminLogin from './pages/admin_login';
+import { ScrollToTop } from './components/ScrollToTop';
 
 // Компонент для захисту адмінських маршрутів
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
@@ -24,6 +25,7 @@ function App() {
   return (
     <BookingProvider>
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           {/* Публічні маршрути */}
           <Route path="/" element={<Home />} />
