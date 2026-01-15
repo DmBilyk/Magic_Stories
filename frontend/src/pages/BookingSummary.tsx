@@ -58,32 +58,37 @@ export const BookingSummary = () => {
   };
 
   const calculateTotals = () => {
-    const baseCost =
-      parseFloat(selectedLocation?.hourlyRate || '0') * durationHours;
+  const baseCost =
+    parseFloat(selectedLocation?.hourlyRate || '0') * durationHours;
 
-    const servicesCost = selectedServices.reduce(
-      (sum, service) => sum + parseFloat(service.price),
-      0
-    );
+  const servicesCost = selectedServices.reduce(
+    (sum, service) => sum + parseFloat(service.price),
+    0
+  );
 
-    const clothingCost = clothingCart.reduce(
-      (sum, item) => sum + parseFloat(item.item.price) * item.quantity,
-      0
-    );
+  const clothingCost = clothingCart.reduce(
+    (sum, item) => sum + parseFloat(item.item.price) * item.quantity,
+    0
+  );
 
-    const propsCost = 0;
+  const propsCost = 0;
 
-    const totalAmount = baseCost + servicesCost + clothingCost + propsCost;
-    const depositAmount = totalAmount * 0.3;
+  const totalAmount = baseCost + servicesCost + clothingCost + propsCost;
 
-    return {
-      baseCost,
-      servicesCost,
-      clothingCost,
-      totalAmount,
-      depositAmount,
-    };
+
+  const hourlyRate = parseFloat(selectedLocation?.hourlyRate || '0');
+  const halfTotal = totalAmount * 0.5;
+  const maxDeposit = hourlyRate;
+  const depositAmount = Math.min(halfTotal, maxDeposit);
+
+  return {
+    baseCost,
+    servicesCost,
+    clothingCost,
+    totalAmount,
+    depositAmount,
   };
+};
 
   const totals = calculateTotals();
 
@@ -379,9 +384,9 @@ export const BookingSummary = () => {
                     <span className="text-3xl font-bold text-slate-900">{formatCurrency(totals.totalAmount)}</span>
                  </div>
                  <div className="flex justify-between items-center pt-4 border-t border-slate-200">
-                    <span className="font-semibold text-slate-900 flex items-center">
-                        <Check className="w-4 h-4 mr-2 text-slate-900" />
-                        Необхідна передоплата (30%)
+                   <span className="font-semibold text-slate-900 flex items-center">
+                    <Check className="w-4 h-4 mr-2 text-slate-900" />
+                    Необхідна передоплата
                     </span>
                     <span className="font-bold text-xl text-slate-900">
                         {formatCurrency(totals.depositAmount)}
@@ -396,8 +401,9 @@ export const BookingSummary = () => {
               <div className="text-sm text-slate-500 leading-relaxed">
                 <p className="font-semibold text-slate-900 mb-1">Інформація про оплату</p>
                 <p>
-                  Ви будете перенаправлені на LiqPay для безпечної оплати. Для підтвердження бронювання
-                  необхідна передоплата 30%. Залишок можна сплатити у студії.
+                Ви будете перенаправлені на LiqPay для безпечної оплати. Для підтвердження бронювання
+                необхідна передоплата (50% від суми, але не більше ціни за 1 годину оренди студії).
+                Залишок можна сплатити у студії.
                 </p>
               </div>
             </div>
