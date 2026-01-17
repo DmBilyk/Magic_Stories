@@ -4,7 +4,7 @@ export const API_ENDPOINTS = {
   locations: `${API_BASE_URL}/locations/`,
   services: `${API_BASE_URL}/services/`,
 
-  // FIXED: було /bookings/bookings/
+
   bookings: `${API_BASE_URL}/bookings/`,
 
   availability: `${API_BASE_URL}/bookings/availability/`,

@@ -195,6 +195,48 @@ export const Home = () => {
         </div>
       )}
 
+      {/* Details Section */}
+      <div id="details" className="max-w-7xl mx-auto px-6 py-32">
+        <div className="mb-16">
+          <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
+            <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
+              Реквізит
+            </h2>
+          </div>
+          <h3 className="text-3xl font-light text-black tracking-tight">Деталі для вашої зйомки</h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/flags.JPG"
+                alt="Прапорці"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/numbers.JPG"
+                alt="Цифри"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/cake_stands.JPG"
+                alt="Підставки для тортів"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* CTA Section */}
       <div className="py-32 px-6 bg-white text-center">
         <div className="max-w-3xl mx-auto">

@@ -14,7 +14,7 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem('access_token');
 
   if (!token) {
-    // Якщо токена немає, перекидаємо на новий логін
+
     return <Navigate to="/manager/login" replace />;
   }
 
@@ -34,8 +34,7 @@ function App() {
           <Route path="/summary" element={<BookingSummary />} />
           <Route path="/payment/success" element={<PaymentSuccessPage />} />
 
-          {/* === ЗМІНА ТУТ: Використовуємо /manager замість /admin === */}
-          {/* Це дозволяє уникнути конфлікту з Django Admin в Nginx */}
+
 
           <Route path="/manager/login" element={<AdminLogin />} />
 
@@ -48,12 +47,10 @@ function App() {
             }
           />
 
-          {/* Якщо хтось спробує зайти просто на /manager */}
+
           <Route path="/manager" element={<Navigate to="/manager/dashboard" replace />} />
 
-          {/* Старий шлях /admin залишаємо для Django (якщо він вам ще треба) */}
-          {/* Або можна перенаправляти: */}
-          {/* <Route path="/admin" element={<Navigate to="/manager/dashboard" replace />} /> */}
+
         </Routes>
       </BrowserRouter>
     </BookingProvider>

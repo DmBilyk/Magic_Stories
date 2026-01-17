@@ -12,13 +12,13 @@ const API_BASE = '/api';
 interface Location {
   id: string;
   name: string;
-  hourly_rate: number | string; // ✅ ВИПРАВЛЕНО: може бути string з API
+  hourly_rate: number | string;
 }
 
 interface Service {
   id: string;
   name: string;
-  price: number | string; // ✅ ВИПРАВЛЕНО
+  price: number | string;
   is_active: boolean;
 }
 
@@ -161,7 +161,7 @@ const AdminBookingPanel = () => {
     setFilteredBookings(filtered);
   };
 
-  // ✅ ВИПРАВЛЕНО: додано endpoint для 'paid'
+
   const handleStatusChange = async (bookingId: string, newStatus: string) => {
     try {
       let endpoint = '';
@@ -501,7 +501,7 @@ const CreateBookingModal: React.FC<{
     }
   };
 
-  // ✅ ВИПРАВЛЕНО: Calculation з parseFloat
+
   const calculateEstimatedTotal = () => {
     const loc = locations.find(l => l.id === formData.locationId);
     if (!loc) return 0;

@@ -15,7 +15,6 @@ const AdminLogin = () => {
     setLoading(true);
 
     try {
-      // Замініть '/api/token/' на ваш реальний URL отримання токена в Django
       const response = await fetch('/api/token/', {
         method: 'POST',
         headers: {
@@ -30,13 +29,13 @@ const AdminLogin = () => {
         throw new Error(data.detail || 'Невірний логін або пароль');
       }
 
-      // Зберігаємо токен
+
       localStorage.setItem('access_token', data.access);
       if (data.refresh) {
         localStorage.setItem('refresh_token', data.refresh);
       }
 
-      // Перенаправляємо в адмінку
+
       navigate('/manager/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка входу');

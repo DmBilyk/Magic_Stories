@@ -343,11 +343,10 @@ export const propService = {
   },
 };
 
-// NEW: Payment Service to check status explicitly
+
 export const paymentService = {
   checkStatus: async (paymentId: string) => {
-    // ВАЖЛИВО: Переконайтесь, що цей шлях співпадає з вашим urls.py
-    // Зазвичай це: /api/payments/<id>/check-status/
+
     return fetchAPI<{
         success: boolean;
         payment: {
