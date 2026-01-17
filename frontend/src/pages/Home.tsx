@@ -243,13 +243,55 @@ export const Home = () => {
         </div>
       )}
 
+      {/* Details Section */}
+      <div id="details" className="max-w-7xl mx-auto px-6 py-32">
+        <div className="mb-16">
+          <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
+            <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
+              Реквізит
+            </h2>
+          </div>
+          <h3 className="text-3xl font-light text-black tracking-tight">Деталі для вашої зйомки</h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/flags.JPG"
+                alt="Прапорці"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/numbers.JPG"
+                alt="Цифри"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+          <div className="relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="/assets/details/cake_stands.JPG"
+                alt="Підставки для тортів"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* CTA Section */}
-      <div className="py-32 px-6 bg-black text-center">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-4xl sm:text-5xl font-light text-white mb-6 tracking-tight">
+      <div className="py-20 px-6 bg-black text-center">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl sm:text-4xl font-light text-white mb-4 tracking-tight">
             Готові до зйомки?
           </h2>
-          <p className="text-neutral-400 text-lg mb-12 font-light">
+          <p className="text-neutral-400 text-base mb-10 font-light">
             Оберіть локацію, яка надихає вас найбільше.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -257,9 +299,9 @@ export const Home = () => {
                 <button
                     key={loc.id}
                     onClick={() => handleBookLocation(loc)}
-                    className="px-8 py-4 bg-white text-black font-light tracking-wider hover:bg-neutral-200 transition-colors text-sm uppercase"
+                    className="px-10 py-4 bg-white text-black font-light tracking-wider hover:bg-neutral-200 transition-colors text-sm uppercase"
                 >
-                    Бронювати: {loc.name}
+                    {loc.name}
                 </button>
              ))}
           </div>
