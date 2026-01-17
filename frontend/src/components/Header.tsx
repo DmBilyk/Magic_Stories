@@ -34,11 +34,15 @@ export const Header = () => {
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex justify-between items-center h-20">
           {/* Logo */}
-          <div className="flex items-center cursor-pointer group">
-            <Calendar className="w-5 h-5 text-black mr-3 group-hover:rotate-12 transition-transform duration-300" />
-            <span className="text-xl font-light text-black tracking-wider">
-              StudioBook
-            </span>
+          <div
+            onClick={() => navigate('/')}
+            className="flex items-center cursor-pointer group"
+          >
+            <img
+              src="/assets/logo/logo.PNG"
+              alt="StudioBook Logo"
+              className="h-12 w-auto object-contain"
+            />
           </div>
 
           {/* Desktop Navigation */}
