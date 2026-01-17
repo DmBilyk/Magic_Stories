@@ -33,17 +33,24 @@ export const Header = () => {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-neutral-200">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex justify-between items-center h-20">
-          {/* Logo */}
-          <div
-            onClick={() => navigate('/')}
-            className="flex items-center cursor-pointer group"
-          >
-            <img
-              src="/assets/logo/logo.PNG"
-              alt="StudioBook Logo"
-              className="h-12 w-auto object-contain"
-            />
-          </div>
+
+
+      {/* Logo */}
+      <div
+        onClick={() => navigate('/')}
+        className="flex items-center cursor-pointer group"
+      >
+        <img
+          src="/assets/logo/logo.PNG"
+          alt="StudioBook Logo"
+          className="h-12 w-auto object-contain mr-3"
+        />
+
+        <span className="text-xl font-light text-black tracking-wider group-hover:tracking-widest transition-all duration-300">
+          Magic Stories
+        </span>
+      </div>
+
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-12">
