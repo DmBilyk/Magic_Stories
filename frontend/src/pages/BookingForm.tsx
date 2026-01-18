@@ -5,20 +5,12 @@ import {
   MapPin, Calendar, ChevronRight
 } from 'lucide-react';
 import { useBooking } from '../context/BookingContext';
-import { fetchAPI, API_ENDPOINTS } from '../services/api';
+import { bookingService, serviceAPI, availabilityService } from '../services/api';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { BookingFormSkeleton } from '../components/Skeleton';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { DatePicker } from '../components/DatePicker';
-
-// Imports types from index.ts
-import type {
-  AdditionalService,
-  BookingSettings,
-  TimeSlot,
-  AvailabilityResponse
-} from '../types';
-
+import type { AdditionalService, BookingSettings, TimeSlot } from '../types';
 import {
   getTodayDate,
   getMaxBookingDate,
@@ -66,20 +58,6 @@ export const BookingForm = () => {
   const [error, setError] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Get location-specific minimum duration
-  const getLocationMinDuration = (): number => {
-    if (!selectedLocation) return 1;
-
-    // "min_booking_duration" is not in the Location interface provided in index.ts,
-    // so we keep the cast to 'any' for this specific property if it comes from the backend.
-    const locationMin = (selectedLocation as any).min_booking_duration;
-    if (locationMin !== undefined) {
-      return Number(locationMin);
-    }
-
-    return 1;
-  };
-
   useEffect(() => {
     if (!selectedLocation) {
       navigate('/');
@@ -89,8 +67,6 @@ export const BookingForm = () => {
   }, [selectedLocation, navigate]);
 
   useEffect(() => {
-    // Check availability whenever dependencies change
-    // Ensure bookingDate (string) is present
     if (bookingDate && selectedLocation && settings && durationHours > 0) {
       checkAvailability();
     }
@@ -99,27 +75,23 @@ export const BookingForm = () => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-
       const [settingsData, servicesData] = await Promise.all([
-        fetchAPI<BookingSettings>(API_ENDPOINTS.bookingSettings),
-        fetchAPI<AdditionalService[]>(API_ENDPOINTS.services),
+        bookingService.getSettings(),
+        serviceAPI.getAll(),
       ]);
-
       setSettings(settingsData);
 
-      // Set initial duration based on location minimum
-      const locationMin = getLocationMinDuration();
+      const min = settingsData?.minBookingHours ? Number(settingsData.minBookingHours) : 1;
 
-      if (!durationHours || durationHours < locationMin) {
-        setDurationHours(locationMin);
+      if (!durationHours || durationHours < min) {
+        setDurationHours(min);
       }
 
-      // Filter only active services
       setServices(servicesData.filter((s) => s.isActive));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load booking data');
-      setDurationHours(getLocationMinDuration());
+      setDurationHours(1);
     } finally {
       setLoading(false);
     }
@@ -130,27 +102,25 @@ export const BookingForm = () => {
 
     try {
       setCheckingSlots(true);
-
-      const queryParams = new URLSearchParams({
-        date: bookingDate, // Assuming bookingDate is a string (YYYY-MM-DD) from context/DatePicker
-        duration: durationHours.toString(),
-        location_id: selectedLocation.id
-      });
-
-      const response = await fetchAPI<AvailabilityResponse>(
-        `${API_ENDPOINTS.availability}?${queryParams.toString()}`
+      const response = await availabilityService.checkAvailability(
+        bookingDate,
+        durationHours,
+        selectedLocation.id
       );
 
-      setAvailableSlots(response.slots);
+      const formattedSlots = response.slots.map((slot) => ({
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        available: slot.available,
+      }));
+      setAvailableSlots(formattedSlots);
+
       setError('');
 
-      // Check if previously selected time is still available in the new slots
-      if (bookingTime && !response.slots.some((s) => s.startTime === bookingTime && s.available)) {
+      if (bookingTime && !formattedSlots.some((s) => s.startTime === bookingTime && s.available)) {
         setBookingTime('');
       }
     } catch (err) {
-      // Logic: If availability check fails, just clear slots, don't necessarily block the UI with a huge error unless critical
-      // console.error(err);
       setError(err instanceof Error ? err.message : 'Failed to check availability');
       setAvailableSlots([]);
     } finally {
@@ -161,15 +131,21 @@ export const BookingForm = () => {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
 
+
     if (value.length < 4) {
       setPhone('+380');
       return;
     }
 
+
     const numericValue = value.replace(/[^\d+]/g, '');
+
+
     const formattedValue = numericValue.startsWith('+') ? numericValue : `+${numericValue}`;
 
+
     if (!formattedValue.startsWith('+380')) {
+
        if (formattedValue.startsWith('+0')) {
          setPhone('+380' + formattedValue.substring(2));
        } else {
@@ -178,11 +154,13 @@ export const BookingForm = () => {
        return;
     }
 
+
     if (formattedValue.length <= 13) {
       setPhone(formattedValue);
       setValidationErrors((prev) => ({ ...prev, phone: '' }));
     }
   };
+
 
   const handlePhoneFocus = () => {
     if (!phone) {
@@ -193,34 +171,41 @@ export const BookingForm = () => {
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
+    // Валідація імені
     const firstNameValidation = validateName(firstName, "Ім'я");
     if (!firstNameValidation.valid) {
       errors.firstName = firstNameValidation.message;
     }
 
+    // Валідація прізвища
     const lastNameValidation = validateName(lastName, "Прізвище");
     if (!lastNameValidation.valid) {
       errors.lastName = lastNameValidation.message;
     }
 
+    // Валідація телефону
     const phoneValidation = validatePhoneNumber(phone);
     if (!phoneValidation.valid) {
       errors.phone = phoneValidation.message;
     }
 
+    // Валідація email
     const emailValidation = validateEmail(email);
     if (!emailValidation.valid) {
       errors.email = emailValidation.message;
     }
 
+    // Валідація дати
     if (!bookingDate) {
       errors.date = 'Будь ласка, оберіть дату';
     }
 
+    // Валідація часу
     if (!bookingTime) {
       errors.time = 'Будь ласка, оберіть час';
     }
 
+    // Валідація нотаток (опціонально)
     if (notes.trim()) {
       const notesValidation = validateNotes(notes);
       if (!notesValidation.valid) {
@@ -239,6 +224,7 @@ export const BookingForm = () => {
       return;
     }
 
+    // Нормалізуємо дані перед збереженням
     const normalizedPhone = normalizePhoneNumber(phone);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedFirstName = firstName.trim();
@@ -266,56 +252,9 @@ export const BookingForm = () => {
 
   const calculateTotal = () => {
     if (!selectedLocation) return 0;
-    // Fix: hourlyRate and price are strings in the Interface, explicitly convert to Number
-    const basePrice = Number(selectedLocation.hourlyRate) * durationHours;
-    const servicesPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
+    const basePrice = selectedLocation.hourlyRate * durationHours;
+    const servicesPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
     return basePrice + servicesPrice;
-  };
-
-  // Generate duration options with 30-minute steps
-  const generateDurationOptions = () => {
-    if (!settings) return [];
-
-    const locationMin = getLocationMinDuration();
-    // BookingSettings interface defines these as numbers
-    const globalMin = settings.minBookingHours || 0.5;
-    const globalMax = settings.maxBookingHours || 8;
-
-    // Use location minimum, but respect global maximum
-    const minDuration = Math.max(locationMin, globalMin);
-    const maxDuration = globalMax;
-
-    const options: number[] = [];
-    let current = minDuration;
-
-    while (current <= maxDuration) {
-      options.push(current);
-      current += 0.5; // 30-minute step
-    }
-
-    return options;
-  };
-
-  const formatDurationLabel = (hours: number): string => {
-    if (hours === 0.5) return '30 хвилин';
-    if (hours === 1) return '1 година';
-    if (hours === 1.5) return '1.5 години';
-
-    const wholeHours = Math.floor(hours);
-    const hasHalf = hours % 1 !== 0;
-
-    let label = '';
-    if (wholeHours > 0) {
-      if (wholeHours === 1) label = '1 година';
-      else if (wholeHours < 5) label = `${wholeHours} години`;
-      else label = `${wholeHours} годин`;
-    }
-
-    if (hasHalf) {
-      label += ' 30 хв';
-    }
-
-    return label;
   };
 
   if (loading) {
@@ -324,7 +263,16 @@ export const BookingForm = () => {
 
   if (!settings || !selectedLocation) return null;
 
-  const durationOptions = generateDurationOptions();
+  const minH = settings.minBookingHours ? Number(settings.minBookingHours) : 1;
+  const maxH = settings.maxBookingHours ? Number(settings.maxBookingHours) : 8;
+  const safeMin = isNaN(minH) ? 1 : minH;
+  const safeMax = isNaN(maxH) || maxH < safeMin ? safeMin + 8 : maxH;
+
+  const hoursOptions = Array.from(
+    { length: safeMax - safeMin + 1 },
+    (_, i) => safeMin + i
+  );
+
   const today = getTodayDate();
   const maxDate = getMaxBookingDate(settings.advanceBookingDays || 30);
 
@@ -354,23 +302,22 @@ export const BookingForm = () => {
             </div>
         )}
 
-        {/* Hero / Location Info */}
+        {/* Hero / Location Info (Square & Minimal) */}
         <div className="bg-white border border-slate-200 mb-10 shadow-sm">
           <div className="p-8">
             <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-2">
                <div>
                   <h1 className="text-3xl font-bold text-slate-900 mb-2">{selectedLocation.name}</h1>
-                  {/* Corrected: address is now in the interface, no need for 'any' cast */}
-                  {selectedLocation.address && (
+                  {(selectedLocation as any).address && (
                     <div className="flex items-center text-slate-500 mb-4">
                       <MapPin className="w-4 h-4 mr-2" />
-                      <span className="text-sm">{selectedLocation.address}</span>
+                      <span className="text-sm">{(selectedLocation as any).address}</span>
                     </div>
                   )}
                </div>
                <div className="flex items-center bg-slate-50 px-4 py-2 border border-slate-100">
                   <span className="font-bold text-slate-900 mr-1 text-lg">
-                    {formatCurrency(Number(selectedLocation.hourlyRate))}
+                    {formatCurrency(selectedLocation.hourlyRate)}
                   </span>
                   <span className="text-slate-500 text-sm">/ година</span>
                </div>
@@ -378,14 +325,6 @@ export const BookingForm = () => {
             <p className="text-slate-500 text-sm max-w-2xl">
                Заповніть форму нижче, щоб забронювати цей простір. Оберіть зручний час та додаткові послуги.
             </p>
-
-            {/* Show location minimum duration */}
-            {getLocationMinDuration() < 1 && (
-              <div className="mt-3 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 text-xs font-medium border border-blue-200">
-                <Clock className="w-3 h-3" />
-                Мінімум {getLocationMinDuration() === 0.5 ? '30 хвилин' : `${getLocationMinDuration()} год`}
-              </div>
-            )}
           </div>
         </div>
 
@@ -429,9 +368,9 @@ export const BookingForm = () => {
                   }}
                   className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white font-medium text-slate-900 appearance-none rounded-none"
                 >
-                  {durationOptions.map((hours) => (
+                  {hoursOptions.map((hours) => (
                     <option key={hours} value={hours}>
-                      {formatDurationLabel(hours)}
+                      {hours} {hours === 1 ? 'година' : hours < 5 ? 'години' : 'годин'}
                     </option>
                   ))}
                 </select>
@@ -479,15 +418,13 @@ export const BookingForm = () => {
                             }
                             }}
                             disabled={!isAvailable}
-                            className={`
-                              aspect-square p-2 text-sm font-medium transition-all border rounded-none
-                              ${isSelected 
-                                ? 'bg-slate-900 text-white border-slate-900 shadow-none' 
+                            className={`px-4 py-3 font-medium text-sm transition-all border rounded-none ${
+                            isSelected
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-none'
                                 : isAvailable
                                 ? 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
                                 : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
-                              }
-                            `}
+                            }`}
                         >
                             {formatTime(slot.startTime)}
                         </button>
@@ -528,7 +465,7 @@ export const BookingForm = () => {
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-bold text-slate-900 text-base">{service.name}</h3>
                         <span className="text-base font-semibold text-slate-900">
-                          {formatCurrency(Number(service.price))}
+                          {formatCurrency(service.price)}
                         </span>
                       </div>
                       <p className="text-sm text-slate-500 mb-2 leading-relaxed">{service.description}</p>
@@ -612,6 +549,7 @@ export const BookingForm = () => {
                     placeholder="+380XXXXXXXXX"
                     maxLength={13}
                   />
+                  {/* Підказка кількості цифр */}
                   {phone.length > 4 && phone.length < 13 && (
                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
                         ще {13 - phone.length} цифр
@@ -680,7 +618,7 @@ export const BookingForm = () => {
                 {formatCurrency(calculateTotal())}
               </span>
               <span className="text-sm text-slate-500">
-                за {formatDurationLabel(durationHours)}
+                за {durationHours} год
               </span>
             </div>
           </div>

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class BookingAvailabilityService:
-    """Check and manage booking availability with 30-minute time slots."""
+    """Check and manage booking availability and time slots."""
 
     def __init__(self):
         self.settings = BookingSettings.get_settings()
@@ -19,10 +19,10 @@ class BookingAvailabilityService:
     def get_available_slots(
             self,
             check_date: date,
-            duration_hours: Decimal,
+            duration_hours: int,
             location_id: str = None
     ) -> List[Dict]:
-        """Get all available time slots with 30-minute intervals."""
+        """Get all available time slots for date, duration, and optional location."""
         if check_date < date.today():
             return []
 
@@ -39,13 +39,9 @@ class BookingAvailabilityService:
         available_slots = []
         current_time = self.settings.opening_time
 
-        # ✅ CHANGED: Iterate with 30-minute steps
         while True:
             start_datetime = datetime.combine(check_date, current_time)
-
-            # Calculate end time from decimal hours
-            total_minutes = int(float(duration_hours) * 60)
-            end_datetime = start_datetime + timedelta(minutes=total_minutes)
+            end_datetime = start_datetime + timedelta(hours=duration_hours)
             end_time = end_datetime.time()
 
             if end_time > self.settings.closing_time:
@@ -64,8 +60,7 @@ class BookingAvailabilityService:
                 'available': is_available
             })
 
-            # ✅ Move to next 30-minute slot
-            next_datetime = start_datetime + timedelta(minutes=30)
+            next_datetime = start_datetime + timedelta(hours=1)
             current_time = next_datetime.time()
 
             if current_time >= self.settings.closing_time:
@@ -86,12 +81,8 @@ class BookingAvailabilityService:
 
         for booking in existing_bookings:
             booking_start = datetime.combine(check_date, booking.booking_time)
+            booking_end = booking_start + timedelta(hours=booking.duration_hours)
 
-            # Calculate booking end time from decimal hours
-            total_minutes = int(float(booking.duration_hours) * 60)
-            booking_end = booking_start + timedelta(minutes=total_minutes)
-
-            # Check for overlap
             if slot_start < booking_end and slot_end > booking_start:
                 return False
 
@@ -101,7 +92,7 @@ class BookingAvailabilityService:
             self,
             booking_date: date,
             booking_time: time,
-            duration_hours: Decimal,
+            duration_hours: int,
             location_id: str,
             exclude_booking_id: str = None
     ) -> Tuple[bool, str]:
@@ -122,10 +113,7 @@ class BookingAvailabilityService:
             return False, f"Studio opens at {self.settings.opening_time}"
 
         start_datetime = datetime.combine(booking_date, booking_time)
-
-        # Calculate end time from decimal hours
-        total_minutes = int(float(duration_hours) * 60)
-        end_datetime = start_datetime + timedelta(minutes=total_minutes)
+        end_datetime = start_datetime + timedelta(hours=duration_hours)
         end_time = end_datetime.time()
 
         if end_time > self.settings.closing_time:
@@ -142,8 +130,7 @@ class BookingAvailabilityService:
 
         for conflict in conflicts:
             conflict_start = datetime.combine(booking_date, conflict.booking_time)
-            conflict_minutes = int(float(conflict.duration_hours) * 60)
-            conflict_end = conflict_start + timedelta(minutes=conflict_minutes)
+            conflict_end = conflict_start + timedelta(hours=conflict.duration_hours)
 
             if start_datetime < conflict_end and end_datetime > conflict_start:
                 return False, f"Time slot conflicts with existing booking at {conflict.booking_time}"
@@ -153,11 +140,11 @@ class BookingAvailabilityService:
     def get_next_available_slot(
             self,
             start_date: date,
-            duration_hours: Decimal,
+            duration_hours: int,
             location_id: str = None,
             days_to_check: int = 7
     ) -> Optional[Dict]:
-        """Find next available slot with 30-minute precision."""
+        """Find next available slot starting from given date."""
         current_date = start_date
         end_date = start_date + timedelta(days=days_to_check)
 
@@ -180,9 +167,9 @@ class BookingAvailabilityService:
             location_id: str,
             start_date: date,
             end_date: date,
-            duration_hours: Decimal = Decimal('1.0')
+            duration_hours: int = 1
     ) -> Dict[str, List[Dict]]:
-        """Get availability calendar for location with 30-minute slots."""
+        """Get availability calendar for specific location within date range."""
         calendar = {}
         current_date = start_date
 
@@ -195,16 +182,16 @@ class BookingAvailabilityService:
 
 
 class BookingCalculationService:
-    """Calculate booking costs with decimal hour support."""
+    """Calculate booking costs and pricing breakdown."""
 
     @staticmethod
     def calculate_booking_cost(
-            duration_hours: Decimal,
+            duration_hours: int,
             location_id: str = None,
             additional_service_ids: List[str] = None,
             settings: BookingSettings = None
     ) -> Dict[str, Decimal]:
-        """Calculate total cost with support for 0.5, 1.0, 1.5 hours etc."""
+        """Calculate total cost, deposit, and breakdown using location or default rate."""
         if settings is None:
             settings = BookingSettings.get_settings()
 
@@ -217,7 +204,6 @@ class BookingCalculationService:
         else:
             hourly_rate = settings.base_price_per_hour
 
-        # ✅ Works with decimal hours (0.5, 1.0, 1.5, etc.)
         base_cost = hourly_rate * duration_hours
         services_cost = Decimal('0.00')
 
@@ -287,6 +273,7 @@ class BookingManagementService:
             return False
 
         try:
+            # Оновлюємо payment з БД на випадок, якщо він змінився
             booking.payment.refresh_from_db()
 
             logger.info(
@@ -296,14 +283,17 @@ class BookingManagementService:
                 f"current_booking_status={booking.status}"
             )
 
+            # Якщо оплата успішна і статус все ще 'pending_payment'
             if booking.payment.is_paid and booking.status == 'pending_payment':
                 booking.status = 'paid'
                 booking.save(update_fields=['status'])
-                logger.info(f"✅ Booking {booking.id} status updated to 'paid'")
+                logger.info(f"✅ Booking {booking.id} status updated to 'paid' via update_payment_status")
                 return True
 
+            # Якщо оплата не успішна і статус 'pending_payment', можна скасувати
             if not booking.payment.is_paid and booking.status == 'pending_payment':
-                logger.info(f"Booking {booking.id} still pending payment")
+                # Опціонально: автоматично скасовувати через деякий час
+                logger.info(f"Booking {booking.id} still pending payment, no action taken")
                 return False
 
             logger.info(f"No status update needed for booking {booking.id}")
@@ -318,7 +308,7 @@ class BookingManagementService:
             days: int = 7,
             location_id: str = None
     ) -> List[StudioBooking]:
-        """Get upcoming bookings."""
+        """Get upcoming bookings, optionally filtered by location."""
         today = date.today()
         end_date = today + timedelta(days=days)
 
@@ -337,7 +327,7 @@ class BookingManagementService:
             status: str,
             location_id: str = None
     ) -> List[StudioBooking]:
-        """Get bookings by status."""
+        """Get bookings by status, optionally filtered by location."""
         queryset = StudioBooking.objects.filter(status=status)
 
         if location_id:

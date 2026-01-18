@@ -26,11 +26,11 @@ class AdditionalServiceSerializer(serializers.ModelSerializer):
 
 
 class LocationBriefSerializer(serializers.ModelSerializer):
-    """Brief location info with minimum booking duration."""
+    """Brief location info for booking display."""
 
     class Meta:
         model = Location
-        fields = ['id', 'name', 'hourly_rate', 'image', 'min_booking_duration']
+        fields = ['id', 'name', 'hourly_rate', 'image']
         read_only_fields = ['id']
 
 
@@ -53,7 +53,7 @@ class BookingSettingsSerializer(serializers.ModelSerializer):
 
 
 class StudioBookingSerializer(serializers.ModelSerializer):
-    """Main booking serializer with 30-minute interval support."""
+    """Main booking serializer with location, services, clothing, and props."""
 
     location = LocationBriefSerializer(read_only=True)
     location_id = serializers.UUIDField(write_only=True)
@@ -228,33 +228,23 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         return value
 
     def validate_duration_hours(self, value):
-        """✅ UPDATED: Validate duration with 0.5 hour increments."""
+        """Validate duration is within allowed range."""
         settings = BookingSettings.get_settings()
 
-        # Convert to Decimal for precise comparison
-        duration = Decimal(str(value))
-
-        # Check if it's a valid 30-minute increment (0.5, 1.0, 1.5, 2.0, etc.)
-        remainder = duration % Decimal('0.5')
-        if remainder != Decimal('0'):
-            raise serializers.ValidationError(
-                "Duration must be in 30-minute increments (0.5, 1.0, 1.5, etc.)"
-            )
-
-        if duration < settings.min_booking_hours:
+        if value < settings.min_booking_hours:
             raise serializers.ValidationError(
                 f"Minimum booking duration is {settings.min_booking_hours} hour(s)"
             )
 
-        if duration > settings.max_booking_hours:
+        if value > settings.max_booking_hours:
             raise serializers.ValidationError(
                 f"Maximum booking duration is {settings.max_booking_hours} hour(s)"
             )
 
-        return duration
+        return value
 
     def validate(self, data):
-        """Validate booking constraints with 30-minute precision."""
+        """Validate booking constraints and check for conflicts."""
         settings = BookingSettings.get_settings()
 
         if not settings.is_booking_enabled:
@@ -273,10 +263,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             })
 
         start_datetime = datetime.combine(booking_date, booking_time)
-
-        # ✅ Calculate end time with decimal hours
-        total_minutes = int(float(duration_hours) * 60)
-        end_datetime = start_datetime + timedelta(minutes=total_minutes)
+        end_datetime = start_datetime + timedelta(hours=duration_hours)
         end_time = end_datetime.time()
 
         if end_time > settings.closing_time:
@@ -284,7 +271,6 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 'duration_hours': f"Booking would extend past closing time ({settings.closing_time})"
             })
 
-        # Check for conflicts with 30-minute precision
         conflicts = StudioBooking.objects.filter(
             location_id=location_id,
             booking_date=booking_date,
@@ -293,15 +279,13 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         for conflict in conflicts:
             conflict_start = datetime.combine(booking_date, conflict.booking_time)
-            conflict_minutes = int(float(conflict.duration_hours) * 60)
-            conflict_end = conflict_start + timedelta(minutes=conflict_minutes)
+            conflict_end = conflict_start + timedelta(hours=conflict.duration_hours)
 
             if (start_datetime < conflict_end and end_datetime > conflict_start):
                 raise serializers.ValidationError({
                     'booking_time': f"Time slot conflicts with existing booking at {conflict.booking_time}"
                 })
 
-        # Validate clothing availability
         clothing_items = data.get('clothing_items', [])
         if clothing_items:
             from clothing.services import ClothingAvailabilityService
@@ -320,7 +304,6 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                     'clothing_items': errors
                 })
 
-        # Validate prop availability
         prop_items = data.get('prop_items', [])
         if prop_items:
             from props.services import PropAvailabilityService
@@ -341,8 +324,10 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         return data
 
+
+
     def create(self, validated_data):
-        """Create booking with decimal hours support."""
+        """Create booking with calculated prices from location."""
         additional_service_ids = validated_data.pop('additional_service_ids', [])
         location_id = validated_data.get('location_id')
         clothing_items = validated_data.pop('clothing_items', [])
@@ -350,7 +335,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         settings = BookingSettings.get_settings()
 
-        # Set hourly rate from location
+        # 1. Визначаємо ціну за годину
         try:
             location = Location.objects.get(id=location_id, is_active=True)
             validated_data['base_price_per_hour'] = location.hourly_rate
@@ -359,7 +344,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         validated_data['deposit_percentage'] = settings.deposit_percentage
 
-        # Calculate services total
+        # 2. Розраховуємо вартість послуг ЗАЗДАЛЕГІДЬ (щоб не було NULL)
         services_total = Decimal('0.00')
         services_to_add = []
 
@@ -370,28 +355,32 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             )
             services_total = sum(service.price for service in services_to_add)
 
+        # Додаємо пораховану суму послуг у дані для створення
         validated_data['services_total'] = services_total
 
-        # ✅ Calculate initial total with decimal hours
+        # 3. Розраховуємо початкову загальну вартість (Оренда + Послуги)
+        # Формула: (ціна_за_годину * години) + послуги
         base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
         initial_total = base_cost + services_total
 
-        # Calculate deposit
+
         half_total = initial_total * Decimal('0.50')
         max_deposit = validated_data['base_price_per_hour']
         initial_deposit = min(half_total, max_deposit)
 
+        # Додаємо ці значення, щоб база даних не сварилася на NULL
         validated_data['total_amount'] = initial_total
         validated_data['deposit_amount'] = initial_deposit
 
-        # Create booking
+        # 4. Тепер безпечно створюємо запис (INSERT)
         booking = StudioBooking.objects.create(**validated_data)
 
-        # Add services
+        # 5. Прив'язуємо послуги (Many-to-Many)
         if services_to_add:
             booking.additional_services.set(services_to_add)
 
-        # Add clothing and props
+        # 6. Обробка одягу та реквізиту (це змінить total_amount, якщо щось додано)
+        # (Тут код залишається майже без змін, але ми оновлюємо вже існуючі значення)
         items_added = False
 
         if clothing_items:
@@ -414,14 +403,15 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 booking.total_amount += prop_cost
                 items_added = True
 
-        # Recalculate deposit if items added
+
         if items_added:
+
             half_total = booking.total_amount * Decimal('0.50')
             max_deposit = booking.base_price_per_hour
             booking.deposit_amount = min(half_total, max_deposit)
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
-        # Update payment amount if exists
+        # Якщо оплата вже створена (що малоймовірно в create, але можливо), оновлюємо її
         if hasattr(booking, 'payment') and booking.payment:
             booking.payment.amount = booking.deposit_amount
             booking.payment.save(update_fields=['amount'])
@@ -430,15 +420,10 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
 
 class AvailabilityCheckSerializer(serializers.Serializer):
-    """Check availability with decimal hours."""
+    """Check availability for specific date, duration, and location."""
 
     date = serializers.DateField()
-    duration_hours = serializers.DecimalField(
-        max_digits=4,
-        decimal_places=1,
-        min_value=Decimal('0.5'),
-        max_value=Decimal('24.0')
-    )
+    duration_hours = serializers.IntegerField(min_value=1, max_value=24)
     location_id = serializers.UUIDField(required=False)
 
     def validate_date(self, value):
@@ -466,7 +451,59 @@ class AvailableSlotSerializer(serializers.Serializer):
 
 
 class AdminBookingSerializer(serializers.ModelSerializer):
-    """Extended booking serializer for admin views."""
+    """Extended booking serializer for admin views with payment details."""
+
+    location = LocationBriefSerializer(read_only=True)
+    location_id = serializers.UUIDField(write_only=True, required=False)
+    additional_services = AdditionalServiceSerializer(many=True, read_only=True)
+    additional_service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False
+    )
+    end_time = serializers.SerializerMethodField()
+    payment_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StudioBooking
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_end_time(self, obj):
+        """Calculate and return booking end time."""
+        return obj.get_end_time()
+
+    def get_payment_details(self, obj):
+        """Return detailed payment information if available."""
+        if obj.payment:
+            return {
+                'payment_id': str(obj.payment.id),
+                'amount': str(obj.payment.amount),
+                'is_paid': obj.payment.is_paid,
+                'liqpay_status': obj.payment.liqpay_status,
+                'checkbox_receipt_id': obj.payment.checkbox_receipt_id,
+                'checkbox_fiscal_code': obj.payment.checkbox_fiscal_code,
+                'checkbox_status': obj.payment.checkbox_status
+            }
+        return None
+
+    def validate(self, data):
+        """Minimal validation for admin use - only validate location if provided."""
+        location_id = data.get('location_id')
+        if location_id:
+            try:
+                Location.objects.get(id=location_id, is_active=True)
+            except Location.DoesNotExist:
+                raise serializers.ValidationError({
+                    'location_id': 'Invalid or inactive location'
+                })
+        return data
+
+
+
+
+class AdminBookingSerializer(serializers.ModelSerializer):
+    """Extended booking serializer for admin views with payment details."""
 
     location = LocationBriefSerializer(read_only=True)
     location_id = serializers.UUIDField(write_only=True, required=False)
@@ -477,6 +514,7 @@ class AdminBookingSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    # ✅ ДОДАНО: Підтримка clothing items
     clothing_items = BookingClothingItemCreateSerializer(
         many=True,
         write_only=True,
@@ -489,6 +527,7 @@ class AdminBookingSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    # ✅ ДОДАНО: Підтримка prop items
     prop_items = BookingPropItemCreateSerializer(
         many=True,
         write_only=True,
@@ -510,9 +549,11 @@ class AdminBookingSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_end_time(self, obj):
+        """Calculate and return booking end time."""
         return obj.get_end_time()
 
     def get_payment_details(self, obj):
+        """Return detailed payment information if available."""
         if obj.payment:
             return {
                 'payment_id': str(obj.payment.id),
@@ -526,6 +567,7 @@ class AdminBookingSerializer(serializers.ModelSerializer):
         return None
 
     def validate(self, data):
+        """Minimal validation for admin use - only validate location if provided."""
         location_id = data.get('location_id')
         if location_id:
             try:
@@ -536,8 +578,9 @@ class AdminBookingSerializer(serializers.ModelSerializer):
                 })
         return data
 
+    # ✅✅✅ ДОДАНО: Метод create() для admin booking
     def create(self, validated_data):
-        """Admin create with decimal hours."""
+        """Create admin booking with automatic price calculation from location."""
         additional_service_ids = validated_data.pop('additional_service_ids', [])
         clothing_items = validated_data.pop('clothing_items', [])
         prop_items = validated_data.pop('prop_items', [])
@@ -545,12 +588,14 @@ class AdminBookingSerializer(serializers.ModelSerializer):
 
         settings = BookingSettings.get_settings()
 
+        # 1️⃣ Визначаємо ціну за годину з локації або налаштувань
         try:
             location = Location.objects.get(id=location_id, is_active=True)
             validated_data['base_price_per_hour'] = location.hourly_rate
         except Location.DoesNotExist:
             validated_data['base_price_per_hour'] = settings.base_price_per_hour
 
+        # 2️⃣ Розраховуємо вартість послуг (НЕ може бути NULL)
         services_total = Decimal('0.00')
         services_to_add = []
 
@@ -563,24 +608,32 @@ class AdminBookingSerializer(serializers.ModelSerializer):
 
         validated_data['services_total'] = services_total
 
+        # 3️⃣ Розраховуємо початкову загальну вартість (Оренда + Послуги)
         base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
         initial_total = base_cost + services_total
 
+        # 4️⃣ Встановлюємо deposit_percentage
         validated_data['deposit_percentage'] = settings.deposit_percentage
 
+        # 5️⃣ Якщо адмін передав total_amount і deposit_amount явно - використовуємо їх
+        # Інакше - розраховуємо автоматично
         if 'total_amount' not in validated_data:
             validated_data['total_amount'] = initial_total
 
         if 'deposit_amount' not in validated_data:
+
             half_total = validated_data['total_amount'] * Decimal('0.50')
             max_deposit = validated_data['base_price_per_hour']
             validated_data['deposit_amount'] = min(half_total, max_deposit)
 
+        # 6️⃣ Створюємо booking (INSERT в БД)
         booking = StudioBooking.objects.create(**validated_data)
 
+        # 7️⃣ Прив'язуємо послуги (Many-to-Many)
         if services_to_add:
             booking.additional_services.set(services_to_add)
 
+        # 8️⃣ Обробка одягу та реквізиту (це змінить total_amount, якщо щось додано)
         items_added = False
 
         if clothing_items:
@@ -605,7 +658,9 @@ class AdminBookingSerializer(serializers.ModelSerializer):
                 booking.total_amount += prop_cost
                 items_added = True
 
+
         if items_added:
+
             half_total = booking.total_amount * Decimal('0.50')
             max_deposit = booking.base_price_per_hour
             booking.deposit_amount = min(half_total, max_deposit)

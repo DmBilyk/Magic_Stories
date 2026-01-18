@@ -172,17 +172,8 @@ def process_liqpay_payment(data: str, signature: str) -> HttpResponse:
         return HttpResponse(status=404)
 
     # Перевірка суми
-    try:
-        db_amount = float(payment.amount)
-        request_amount = float(amount)
-
-
-        if abs(db_amount - request_amount) > 0.01:
-            logger.critical(f"❌ AMOUNT MISMATCH! Expected: {db_amount}, Got: {request_amount}")
-            return HttpResponse(status=400)
-
-    except (ValueError, TypeError):
-        logger.error(f"❌ Error converting amounts to float for comparison")
+    if str(payment.amount) != str(amount):
+        logger.critical(f"❌ AMOUNT MISMATCH! Expected: {payment.amount}, Got: {amount}")
         return HttpResponse(status=400)
 
     # Якщо вже оброблений

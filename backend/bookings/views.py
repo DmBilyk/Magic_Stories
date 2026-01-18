@@ -3,9 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
-from django.db import transaction, IntegrityError
+from django.db import transaction
 from datetime import date, datetime
-from decimal import Decimal
 
 from .models import StudioBooking, BookingSettings
 from .serializers import (
@@ -16,6 +15,7 @@ from .serializers import (
     AvailableSlotSerializer,
     AdminBookingSerializer
 )
+from django.db import transaction, IntegrityError
 from studios.models import AdditionalService, Location
 from .services import (
     BookingAvailabilityService,
@@ -23,31 +23,32 @@ from .services import (
     BookingManagementService
 )
 
+
 from payment_service.models import StudioPayment
+
 from payment_service.services import LiqPayService
 
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
-import logging
 
-logger = logging.getLogger(__name__)
+import logging
 
 
 class BookingAvailabilityViewSet(viewsets.ViewSet):
-    """Manage booking availability with 30-minute intervals."""
+    """Manage booking availability checks and slot queries."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
     @action(detail=False, methods=['post'], url_path='check-availability')
     def check_availability(self, request):
-        """Check available time slots with 30-minute precision."""
+        """Check available time slots for date, duration, and optional location."""
         serializer = AvailabilityCheckSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         check_date = serializer.validated_data['date']
-        duration_hours = serializer.validated_data['duration_hours']  # ✅ Now Decimal
+        duration_hours = serializer.validated_data['duration_hours']
         location_id = serializer.validated_data.get('location_id')
 
         service = BookingAvailabilityService()
@@ -59,14 +60,14 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
 
         return Response({
             'date': check_date,
-            'duration_hours': float(duration_hours),  # Convert Decimal to float for JSON
+            'duration_hours': duration_hours,
             'location_id': str(location_id) if location_id else None,
             'slots': available_slots
         })
 
     @action(detail=False, methods=['post'], url_path='is-slot-available')
     def is_slot_available(self, request):
-        """Check if specific time slot is available."""
+        """Check if specific time slot is available for location."""
         booking_date = request.data.get('booking_date')
         booking_time = request.data.get('booking_time')
         duration_hours = request.data.get('duration_hours')
@@ -81,11 +82,10 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         try:
             booking_date = datetime.strptime(booking_date, '%Y-%m-%d').date()
             booking_time = datetime.strptime(booking_time, '%H:%M').time()
-            # ✅ Convert to Decimal for precision
-            duration_hours = Decimal(str(duration_hours))
-        except (ValueError, TypeError) as e:
+            duration_hours = int(duration_hours)
+        except (ValueError, TypeError):
             return Response(
-                {'error': f'Invalid date/time format: {str(e)}'},
+                {'error': 'Invalid date/time format'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -104,7 +104,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'], url_path='calculate-cost')
     def calculate_cost(self, request):
-        """Calculate booking cost with decimal hours support."""
+        """Calculate booking cost with optional services and location."""
         duration_hours = request.data.get('duration_hours')
         location_id = request.data.get('location_id')
         additional_service_ids = request.data.get('additional_service_ids', [])
@@ -116,8 +116,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
             )
 
         try:
-            # ✅ Convert to Decimal
-            duration_hours = Decimal(str(duration_hours))
+            duration_hours = int(duration_hours)
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid duration_hours'},
@@ -130,19 +129,11 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
             additional_service_ids
         )
 
-        # ✅ Convert Decimal values to float for JSON serialization
-        return Response({
-            'base_cost': float(cost_breakdown['base_cost']),
-            'hourly_rate': float(cost_breakdown['hourly_rate']),
-            'services_cost': float(cost_breakdown['services_cost']),
-            'total_amount': float(cost_breakdown['total_amount']),
-            'deposit_amount': float(cost_breakdown['deposit_amount']),
-            'deposit_percentage': float(cost_breakdown['deposit_percentage'])
-        })
+        return Response(cost_breakdown)
 
     @action(detail=False, methods=['post'], url_path='location-calendar')
     def location_calendar(self, request):
-        """Get availability calendar for location with 30-minute slots."""
+        """Get availability calendar for location within date range."""
         location_id = request.data.get('location_id')
         start_date = request.data.get('start_date')
         end_date = request.data.get('end_date')
@@ -157,8 +148,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         try:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            # ✅ Convert to Decimal
-            duration_hours = Decimal(str(duration_hours))
+            duration_hours = int(duration_hours)
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid date format'},
@@ -180,7 +170,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
 
 
 class StudioBookingViewSet(viewsets.ModelViewSet):
-    """Manage studio bookings with 30-minute interval support."""
+    """Manage studio bookings with payment integration."""
 
     serializer_class = StudioBookingSerializer
     permission_classes = [AllowAny]
@@ -210,7 +200,7 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Create booking with decimal hours and initiate payment."""
+        """Create booking and initiate payment process."""
         serializer = self.get_serializer(data=request.data)
 
         serializer.is_valid(raise_exception=True)
@@ -223,7 +213,6 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
                 'code': 'BOOKING_CONFLICT'
             }, status=status.HTTP_409_CONFLICT)
 
-        # Create payment
         payment = StudioPayment.objects.create(
             amount=booking.deposit_amount,
             description=f"Deposit for booking {booking.id} - {booking.first_name} {booking.last_name} on {booking.booking_date}"
@@ -233,10 +222,13 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         booking.save()
 
         scheme = request.scheme
+
         host = request.META.get('HTTP_X_FORWARDED_HOST') or request.get_host()
+
         frontend_base_url = f"{scheme}://{host}"
 
         liqpay_service = LiqPayService()
+
         payment_form_data = liqpay_service.generate_payment_form(payment, frontend_base_url)
 
         return Response({
@@ -372,13 +364,17 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+
         serializer = StudioBookingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+
         booking = serializer.save()
+
 
         if request.data.get('status'):
             booking.status = request.data.get('status')
+            booking.save(update_fields=['status'])
             booking.save(update_fields=['status'])
 
         return Response(
@@ -390,6 +386,7 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
     def location_bookings(self, request):
         """Get all bookings for specific location or ALL locations (admin only)."""
 
+
         if not request.user.is_superuser:
             return Response(
                 {'error': 'Only superusers can view location bookings'},
@@ -400,6 +397,7 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
+
         try:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
@@ -409,10 +407,12 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+
         if location_id and location_id != 'all':
             service = BookingManagementService()
             bookings = service.get_location_bookings(location_id, start_date, end_date)
         else:
+
             bookings = StudioBooking.objects.all()
             if start_date:
                 bookings = bookings.filter(booking_date__gte=start_date)
