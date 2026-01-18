@@ -5,7 +5,7 @@ import uuid
 
 
 class StudioBooking(models.Model):
-    """Photo studios booking"""
+    """Photo studios booking with 30-minute intervals support"""
     STATUS_CHOICES = [
         ('pending_payment', 'Pending Payment'),
         ('paid', 'Paid'),
@@ -16,9 +16,9 @@ class StudioBooking(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Studio Location (NEW - reference to studios app)
+    # Studio Location
     location = models.ForeignKey(
-        'studios.Location',  # Reference to studios app
+        'studios.Location',
         on_delete=models.PROTECT,
         related_name='bookings',
         verbose_name="Studio Location"
@@ -33,6 +33,8 @@ class StudioBooking(models.Model):
     # Booking Details
     booking_date = models.DateField(verbose_name="Booking Date")
     booking_time = models.TimeField(verbose_name="Booking Time")
+
+    # ✅ CHANGED: Support 0.5, 1.0, 1.5, 2.0, etc.
     duration_hours = models.DecimalField(
         max_digits=4,
         decimal_places=1,
@@ -40,9 +42,9 @@ class StudioBooking(models.Model):
         verbose_name="Duration (hours)"
     )
 
-    # Services (Reference to studios app - CHANGED)
+    # Services
     additional_services = models.ManyToManyField(
-        'studios.AdditionalService',  # Reference to studios app
+        'studios.AdditionalService',
         blank=True,
         related_name='bookings',
         verbose_name="Additional Services"
@@ -115,7 +117,6 @@ class StudioBooking(models.Model):
             models.Index(fields=['phone_number']),
             models.Index(fields=['location']),
         ]
-        # Prevent double booking for the same location (UPDATED)
         constraints = [
             models.UniqueConstraint(
                 fields=['location', 'booking_date', 'booking_time'],
@@ -140,14 +141,18 @@ class StudioBooking(models.Model):
         return (self.total_amount * self.deposit_percentage) / Decimal('100.00')
 
     def get_end_time(self):
-        """Calculate booking end time"""
+        """Calculate booking end time - supports 30-minute intervals"""
         from datetime import datetime, timedelta
 
         if not self.booking_date or not self.booking_time:
             return None
 
         start_datetime = datetime.combine(self.booking_date, self.booking_time)
-        end_datetime = start_datetime + timedelta(hours=self.duration_hours)
+
+        # Convert decimal hours to minutes
+        total_minutes = int(float(self.duration_hours) * 60)
+        end_datetime = start_datetime + timedelta(minutes=total_minutes)
+
         return end_datetime.time()
 
 
@@ -175,7 +180,7 @@ class BookingSettings(models.Model):
     opening_time = models.TimeField(default='09:00', verbose_name="Opening Time")
     closing_time = models.TimeField(default='21:00', verbose_name="Closing Time")
 
-    # Booking Rules
+    # Booking Rules - ✅ CHANGED: Allow 0.5 hour minimum
     min_booking_hours = models.DecimalField(
         max_digits=4,
         decimal_places=1,
@@ -183,7 +188,6 @@ class BookingSettings(models.Model):
         validators=[MinValueValidator(Decimal('0.5'))],
         verbose_name="Minimum Booking Hours"
     )
-
     max_booking_hours = models.DecimalField(
         max_digits=4,
         decimal_places=1,
