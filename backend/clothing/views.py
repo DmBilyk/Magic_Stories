@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.db.models import Q, Prefetch
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.permissions import AllowAny
 
 from .models import (
     ClothingCategory,
@@ -35,6 +36,7 @@ class ClothingCategoryViewSet(viewsets.ModelViewSet):
     """ViewSet for managing clothing categories"""
     queryset = ClothingCategory.objects.all()
     serializer_class = ClothingCategorySerializer
+    permission_classes = [AllowAny]
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -52,6 +54,7 @@ class ClothingCategoryViewSet(viewsets.ModelViewSet):
 class ClothingItemViewSet(viewsets.ModelViewSet):
     """ViewSet for managing clothing items"""
     queryset = ClothingItem.objects.all()
+    permission_classes = [AllowAny]
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve', 'check_availability']:
