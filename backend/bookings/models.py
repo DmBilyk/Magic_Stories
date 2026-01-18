@@ -26,7 +26,7 @@ class StudioBooking(models.Model):
 
     # Client Information
     first_name = models.CharField(max_length=100, verbose_name="First Name")
-    last_name = models.CharField(max_length=100, ver©bose_name="Last Name")
+    last_name = models.CharField(max_length=100, verbose_name="Last Name")
     phone_number = models.CharField(max_length=20, verbose_name="Phone Number")
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
 
