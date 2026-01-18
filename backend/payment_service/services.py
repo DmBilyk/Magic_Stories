@@ -30,15 +30,15 @@ class LiqPayService:
     def generate_payment_form(self, payment: StudioPayment, frontend_base_url: str) -> dict:
         """Генерує параметри для платіжної форми LiqPay."""
 
-
         server_url = f"{frontend_base_url}{reverse('liqpay_callback')}"
-
-
         result_url = f"{frontend_base_url}{reverse('payment_success')}?order_id={payment.id}"
+
+
+        amount_val = float(payment.amount)
 
         params = {
             'action': 'pay',
-            'amount': str(payment.amount),
+            'amount': amount_val,
             'currency': 'UAH',
             'description': payment.description,
             'order_id': str(payment.id),
@@ -46,6 +46,7 @@ class LiqPayService:
             'server_url': server_url,
             'result_url': result_url,
         }
+
 
         data = self.liqpay.cnb_data(params)
         signature = self.liqpay.cnb_signature(params)
