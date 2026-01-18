@@ -5,19 +5,20 @@ import {
   MapPin, Calendar, ChevronRight
 } from 'lucide-react';
 import { useBooking } from '../context/BookingContext';
-// 1. Updated imports to use fetchAPI and endpoints
 import { fetchAPI, API_ENDPOINTS } from '../services/api';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { BookingFormSkeleton } from '../components/Skeleton';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { DatePicker } from '../components/DatePicker';
-// 2. Imported correct types
+
+// Imports types from index.ts
 import type {
   AdditionalService,
   BookingSettings,
   TimeSlot,
   AvailabilityResponse
 } from '../types';
+
 import {
   getTodayDate,
   getMaxBookingDate,
@@ -69,13 +70,13 @@ export const BookingForm = () => {
   const getLocationMinDuration = (): number => {
     if (!selectedLocation) return 1;
 
-    // Type assertion for properties possibly not in the strict Interface but returned by API
+    // "min_booking_duration" is not in the Location interface provided in index.ts,
+    // so we keep the cast to 'any' for this specific property if it comes from the backend.
     const locationMin = (selectedLocation as any).min_booking_duration;
     if (locationMin !== undefined) {
       return Number(locationMin);
     }
 
-    // Default fallback
     return 1;
   };
 
@@ -88,6 +89,8 @@ export const BookingForm = () => {
   }, [selectedLocation, navigate]);
 
   useEffect(() => {
+    // Check availability whenever dependencies change
+    // Ensure bookingDate (string) is present
     if (bookingDate && selectedLocation && settings && durationHours > 0) {
       checkAvailability();
     }
@@ -97,7 +100,6 @@ export const BookingForm = () => {
     try {
       setLoading(true);
 
-      // 3. Refactored API calls to use fetchAPI
       const [settingsData, servicesData] = await Promise.all([
         fetchAPI<BookingSettings>(API_ENDPOINTS.bookingSettings),
         fetchAPI<AdditionalService[]>(API_ENDPOINTS.services),
@@ -112,6 +114,7 @@ export const BookingForm = () => {
         setDurationHours(locationMin);
       }
 
+      // Filter only active services
       setServices(servicesData.filter((s) => s.isActive));
       setError('');
     } catch (err) {
@@ -128,9 +131,8 @@ export const BookingForm = () => {
     try {
       setCheckingSlots(true);
 
-      // 4. Refactored availability check using query params
       const queryParams = new URLSearchParams({
-        date: bookingDate,
+        date: bookingDate, // Assuming bookingDate is a string (YYYY-MM-DD) from context/DatePicker
         duration: durationHours.toString(),
         location_id: selectedLocation.id
       });
@@ -139,19 +141,16 @@ export const BookingForm = () => {
         `${API_ENDPOINTS.availability}?${queryParams.toString()}`
       );
 
-      // 5. Use response slots directly (TimeSlot interface matches API response)
       setAvailableSlots(response.slots);
-
       setError('');
 
-      // Check if previously selected time is still available
+      // Check if previously selected time is still available in the new slots
       if (bookingTime && !response.slots.some((s) => s.startTime === bookingTime && s.available)) {
         setBookingTime('');
       }
     } catch (err) {
-      // Don't show error to user immediately on availability check fail, just clear slots
+      // Logic: If availability check fails, just clear slots, don't necessarily block the UI with a huge error unless critical
       // console.error(err);
-      // Only show critical errors if needed, otherwise just empty slots
       setError(err instanceof Error ? err.message : 'Failed to check availability');
       setAvailableSlots([]);
     } finally {
@@ -267,7 +266,7 @@ export const BookingForm = () => {
 
   const calculateTotal = () => {
     if (!selectedLocation) return 0;
-    // 6. Fix price calculation: Convert string prices to Number
+    // Fix: hourlyRate and price are strings in the Interface, explicitly convert to Number
     const basePrice = Number(selectedLocation.hourlyRate) * durationHours;
     const servicesPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
     return basePrice + servicesPrice;
@@ -278,8 +277,9 @@ export const BookingForm = () => {
     if (!settings) return [];
 
     const locationMin = getLocationMinDuration();
-    const globalMin = settings.minBookingHours ? Number(settings.minBookingHours) : 0.5;
-    const globalMax = settings.maxBookingHours ? Number(settings.maxBookingHours) : 8;
+    // BookingSettings interface defines these as numbers
+    const globalMin = settings.minBookingHours || 0.5;
+    const globalMax = settings.maxBookingHours || 8;
 
     // Use location minimum, but respect global maximum
     const minDuration = Math.max(locationMin, globalMin);
@@ -360,11 +360,11 @@ export const BookingForm = () => {
             <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-2">
                <div>
                   <h1 className="text-3xl font-bold text-slate-900 mb-2">{selectedLocation.name}</h1>
-                  {/* Safe access to address if it exists on the location object */}
-                  {(selectedLocation as any).address && (
+                  {/* Corrected: address is now in the interface, no need for 'any' cast */}
+                  {selectedLocation.address && (
                     <div className="flex items-center text-slate-500 mb-4">
                       <MapPin className="w-4 h-4 mr-2" />
-                      <span className="text-sm">{(selectedLocation as any).address}</span>
+                      <span className="text-sm">{selectedLocation.address}</span>
                     </div>
                   )}
                </div>
@@ -464,7 +464,6 @@ export const BookingForm = () => {
                 <div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {availableSlots.map((slot) => {
-                        // isTimeSlotInPast expects string inputs; slot.startTime should be "HH:MM"
                         const isPast = isTimeSlotInPast(bookingDate, slot.startTime);
                         const isAvailable = slot.available && !isPast;
                         const isSelected = bookingTime === slot.startTime;
@@ -529,7 +528,6 @@ export const BookingForm = () => {
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-bold text-slate-900 text-base">{service.name}</h3>
                         <span className="text-base font-semibold text-slate-900">
-                          {/* Ensure price is number for formatting */}
                           {formatCurrency(Number(service.price))}
                         </span>
                       </div>
