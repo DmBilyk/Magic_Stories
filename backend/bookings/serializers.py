@@ -327,8 +327,6 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         return data
 
-
-
     def create(self, validated_data):
         """Create booking with calculated prices from location."""
         additional_service_ids = validated_data.pop('additional_service_ids', [])
@@ -337,6 +335,9 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         prop_items = validated_data.pop('prop_items', [])
 
         settings = BookingSettings.get_settings()
+
+        # Визначаємо формат округлення до копійок (2 знаки)
+        TWO_PLACES = Decimal('0.01')
 
         # 1. Визначаємо ціну за годину
         try:
@@ -347,7 +348,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         validated_data['deposit_percentage'] = settings.deposit_percentage
 
-        # 2. Розраховуємо вартість послуг ЗАЗДАЛЕГІДЬ (щоб не було NULL)
+        # 2. Розраховуємо вартість послуг
         services_total = Decimal('0.00')
         services_to_add = []
 
@@ -356,34 +357,34 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 id__in=additional_service_ids,
                 is_active=True
             )
+            # Примусово конвертуємо в Decimal, щоб уникнути int
             services_total = sum(service.price for service in services_to_add)
+            services_total = Decimal(str(services_total))
 
-        # Додаємо пораховану суму послуг у дані для створення
         validated_data['services_total'] = services_total
 
-        # 3. Розраховуємо початкову загальну вартість (Оренда + Послуги)
-        # Формула: (ціна_за_годину * години) + послуги
+        # 3. Розраховуємо початкову загальну вартість
         base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
         initial_total = base_cost + services_total
 
+        # ! ВАЖЛИВО: Округлюємо total_amount до 2 знаків перед збереженням
+        validated_data['total_amount'] = initial_total.quantize(TWO_PLACES)
 
+        # Розрахунок депозиту з округленням
         half_total = initial_total * Decimal('0.50')
         max_deposit = validated_data['base_price_per_hour']
-        initial_deposit = min(half_total, max_deposit)
-
-        # Додаємо ці значення, щоб база даних не сварилася на NULL
-        validated_data['total_amount'] = initial_total
+        # Беремо менше значення і теж округлюємо
+        initial_deposit = min(half_total, max_deposit).quantize(TWO_PLACES)
         validated_data['deposit_amount'] = initial_deposit
 
-        # 4. Тепер безпечно створюємо запис (INSERT)
+        # 4. Створюємо запис
         booking = StudioBooking.objects.create(**validated_data)
 
-        # 5. Прив'язуємо послуги (Many-to-Many)
+        # 5. Прив'язуємо послуги
         if services_to_add:
             booking.additional_services.set(services_to_add)
 
-        # 6. Обробка одягу та реквізиту (це змінить total_amount, якщо щось додано)
-        # (Тут код залишається майже без змін, але ми оновлюємо вже існуючі значення)
+        # 6. Обробка одягу та реквізиту
         items_added = False
 
         if clothing_items:
@@ -392,9 +393,12 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 booking,
                 clothing_items
             )
-            if success and clothing_cost > 0:
-                booking.total_amount += clothing_cost
-                items_added = True
+            # Конвертуємо clothing_cost в Decimal перед додаванням
+            if success and clothing_cost:
+                cost_decimal = Decimal(str(clothing_cost))
+                if cost_decimal > 0:
+                    booking.total_amount += cost_decimal
+                    items_added = True
 
         if prop_items:
             prop_service = PropBookingService()
@@ -402,19 +406,24 @@ class StudioBookingSerializer(serializers.ModelSerializer):
                 booking,
                 prop_items
             )
-            if success and prop_cost > 0:
-                booking.total_amount += prop_cost
-                items_added = True
-
+            # Конвертуємо prop_cost в Decimal перед додаванням
+            if success and prop_cost:
+                cost_decimal = Decimal(str(prop_cost))
+                if cost_decimal > 0:
+                    booking.total_amount += cost_decimal
+                    items_added = True
 
         if items_added:
+            # Перераховуємо депозит, якщо сума змінилася
+            booking.total_amount = booking.total_amount.quantize(TWO_PLACES)
 
             half_total = booking.total_amount * Decimal('0.50')
             max_deposit = booking.base_price_per_hour
-            booking.deposit_amount = min(half_total, max_deposit)
+            booking.deposit_amount = min(half_total, max_deposit).quantize(TWO_PLACES)
+
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
-        # Якщо оплата вже створена (що малоймовірно в create, але можливо), оновлюємо її
+        # Оновлення payment, якщо він вже існує (хоча зазвичай ще ні)
         if hasattr(booking, 'payment') and booking.payment:
             booking.payment.amount = booking.deposit_amount
             booking.payment.save(update_fields=['amount'])
