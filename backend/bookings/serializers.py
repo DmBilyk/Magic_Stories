@@ -377,7 +377,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         # Розрахунок депозиту
         half_total = initial_total * Decimal('0.50')
-        max_deposit = validated_data['base_price_per_hour']
+        max_deposit = validated_data['base_price_per_hour'] * duration_decimal
 
         # Округлюємо депозит
         validated_data['deposit_amount'] = min(half_total, max_deposit).quantize(TWO_PLACES)
@@ -423,7 +423,7 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             booking.total_amount = booking.total_amount.quantize(TWO_PLACES)
 
             half_total = booking.total_amount * Decimal('0.50')
-            max_deposit = booking.base_price_per_hour
+            max_deposit = booking.base_price_per_hour * booking.duration_hours
 
             booking.deposit_amount = min(half_total, max_deposit).quantize(TWO_PLACES)
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
@@ -632,9 +632,8 @@ class AdminBookingSerializer(serializers.ModelSerializer):
             validated_data['total_amount'] = initial_total
 
         if 'deposit_amount' not in validated_data:
-
             half_total = validated_data['total_amount'] * Decimal('0.50')
-            max_deposit = validated_data['base_price_per_hour']
+            max_deposit = validated_data['base_price_per_hour'] * validated_data['duration_hours']
             validated_data['deposit_amount'] = min(half_total, max_deposit)
 
         # 6️⃣ Створюємо booking (INSERT в БД)
@@ -669,12 +668,9 @@ class AdminBookingSerializer(serializers.ModelSerializer):
                 booking.total_amount += prop_cost
                 items_added = True
 
-
         if items_added:
-
             half_total = booking.total_amount * Decimal('0.50')
-            max_deposit = booking.base_price_per_hour
+            max_deposit = booking.base_price_per_hour * booking.duration_hours
             booking.deposit_amount = min(half_total, max_deposit)
-            booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
         return booking
