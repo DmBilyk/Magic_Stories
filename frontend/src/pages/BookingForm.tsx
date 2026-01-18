@@ -27,6 +27,18 @@ import {
 } from '../utils/validation';
 
 export const BookingForm = () => {
+  // --- КОНФІГУРАЦІЯ ЛОКАЦІЙ ---
+  // ЗНАЙДИ UUID своєї "Локації 1" і встав його сюди замість нулів:
+  const LOCATION_1_ID = '136eade1-873d-48cb-a604-2f5e54706f02';
+
+  // Функція визначення мінімального часу
+  const getMinDurationForLocation = (locationId: string): number => {
+    // Якщо ID збігається з першою локацією — мінімум 1 година
+    if (locationId === LOCATION_1_ID) return 1;
+    // Для всіх інших — 30 хвилин (0.5 години)
+    return 0.5;
+  };
+
   const navigate = useNavigate();
   const {
     selectedLocation,
@@ -81,17 +93,26 @@ export const BookingForm = () => {
       ]);
       setSettings(settingsData);
 
-      const min = settingsData?.minBookingHours ? Number(settingsData.minBookingHours) : 1;
+      // Визначаємо мінімальний час:
+      // 1. Беремо глобальне налаштування або 0.5 за замовчуванням
+      let globalMin = settingsData?.minBookingHours ? Number(settingsData.minBookingHours) : 0.5;
 
-      if (!durationHours || durationHours < min) {
-        setDurationHours(min);
+      // 2. Беремо мінімум для конкретної локації
+      const locationMin = getMinDurationForLocation(selectedLocation.id);
+
+      // 3. Вибираємо більше з двох значень
+      const finalMin = Math.max(globalMin, locationMin);
+
+      // Якщо поточна тривалість не встановлена або менша за мінімум — оновлюємо
+      if (!durationHours || durationHours < finalMin) {
+        setDurationHours(finalMin);
       }
 
       setServices(servicesData.filter((s) => s.isActive));
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load booking data');
-      setDurationHours(1);
+      console.error(err);
+      setError('Не вдалося завантажити дані бронювання');
     } finally {
       setLoading(false);
     }
@@ -131,21 +152,15 @@ export const BookingForm = () => {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
 
-
     if (value.length < 4) {
       setPhone('+380');
       return;
     }
 
-
     const numericValue = value.replace(/[^\d+]/g, '');
-
-
     const formattedValue = numericValue.startsWith('+') ? numericValue : `+${numericValue}`;
 
-
     if (!formattedValue.startsWith('+380')) {
-
        if (formattedValue.startsWith('+0')) {
          setPhone('+380' + formattedValue.substring(2));
        } else {
@@ -154,13 +169,11 @@ export const BookingForm = () => {
        return;
     }
 
-
     if (formattedValue.length <= 13) {
       setPhone(formattedValue);
       setValidationErrors((prev) => ({ ...prev, phone: '' }));
     }
   };
-
 
   const handlePhoneFocus = () => {
     if (!phone) {
@@ -171,41 +184,34 @@ export const BookingForm = () => {
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
-    // Валідація імені
     const firstNameValidation = validateName(firstName, "Ім'я");
     if (!firstNameValidation.valid) {
       errors.firstName = firstNameValidation.message;
     }
 
-    // Валідація прізвища
     const lastNameValidation = validateName(lastName, "Прізвище");
     if (!lastNameValidation.valid) {
       errors.lastName = lastNameValidation.message;
     }
 
-    // Валідація телефону
     const phoneValidation = validatePhoneNumber(phone);
     if (!phoneValidation.valid) {
       errors.phone = phoneValidation.message;
     }
 
-    // Валідація email
     const emailValidation = validateEmail(email);
     if (!emailValidation.valid) {
       errors.email = emailValidation.message;
     }
 
-    // Валідація дати
     if (!bookingDate) {
       errors.date = 'Будь ласка, оберіть дату';
     }
 
-    // Валідація часу
     if (!bookingTime) {
       errors.time = 'Будь ласка, оберіть час';
     }
 
-    // Валідація нотаток (опціонально)
     if (notes.trim()) {
       const notesValidation = validateNotes(notes);
       if (!notesValidation.valid) {
@@ -224,7 +230,6 @@ export const BookingForm = () => {
       return;
     }
 
-    // Нормалізуємо дані перед збереженням
     const normalizedPhone = normalizePhoneNumber(phone);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedFirstName = firstName.trim();
@@ -252,6 +257,7 @@ export const BookingForm = () => {
 
   const calculateTotal = () => {
     if (!selectedLocation) return 0;
+    // durationHours тепер може бути дробовим (напр. 1.5), множення працюватиме коректно
     const basePrice = selectedLocation.hourlyRate * durationHours;
     const servicesPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
     return basePrice + servicesPrice;
@@ -263,18 +269,34 @@ export const BookingForm = () => {
 
   if (!settings || !selectedLocation) return null;
 
-  const minH = settings.minBookingHours ? Number(settings.minBookingHours) : 1;
+  // --- ЛОГІКА ГЕНЕРАЦІЇ ОПЦІЙ ЧАСУ (З кроком 0.5) ---
+  const minH = settings.minBookingHours ? Number(settings.minBookingHours) : 0.5;
   const maxH = settings.maxBookingHours ? Number(settings.maxBookingHours) : 8;
-  const safeMin = isNaN(minH) ? 1 : minH;
+
+  // Враховуємо специфіку локації
+  const locationMin = getMinDurationForLocation(selectedLocation.id);
+
+  const safeMin = Math.max(locationMin, isNaN(minH) ? 0.5 : minH);
   const safeMax = isNaN(maxH) || maxH < safeMin ? safeMin + 8 : maxH;
 
-  const hoursOptions = Array.from(
-    { length: safeMax - safeMin + 1 },
-    (_, i) => safeMin + i
-  );
+  // Генеруємо масив з кроком 0.5 (наприклад: 1, 1.5, 2, 2.5...)
+  const hoursOptions: number[] = [];
+  for (let i = safeMin; i <= safeMax; i += 0.5) {
+      hoursOptions.push(i);
+  }
 
   const today = getTodayDate();
   const maxDate = getMaxBookingDate(settings.advanceBookingDays || 30);
+
+  // Допоміжна функція для відображення тексту тривалості
+  const getDurationLabel = (hours: number) => {
+      if (hours === 0.5) return '0.5 години (30 хв)';
+      if (hours === 1) return '1 година';
+      // Для дробових чисел (1.5, 2.5) краще писати "години"
+      if (!Number.isInteger(hours)) return `${hours} години`;
+      if (hours < 5) return `${hours} години`;
+      return `${hours} годин`;
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -302,7 +324,7 @@ export const BookingForm = () => {
             </div>
         )}
 
-        {/* Hero / Location Info (Square & Minimal) */}
+        {/* Hero / Location Info */}
         <div className="bg-white border border-slate-200 mb-10 shadow-sm">
           <div className="p-8">
             <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-2">
@@ -370,7 +392,7 @@ export const BookingForm = () => {
                 >
                   {hoursOptions.map((hours) => (
                     <option key={hours} value={hours}>
-                      {hours} {hours === 1 ? 'година' : hours < 5 ? 'години' : 'годин'}
+                      {getDurationLabel(hours)}
                     </option>
                   ))}
                 </select>
@@ -549,7 +571,6 @@ export const BookingForm = () => {
                     placeholder="+380XXXXXXXXX"
                     maxLength={13}
                   />
-                  {/* Підказка кількості цифр */}
                   {phone.length > 4 && phone.length < 13 && (
                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
                         ще {13 - phone.length} цифр
@@ -618,7 +639,7 @@ export const BookingForm = () => {
                 {formatCurrency(calculateTotal())}
               </span>
               <span className="text-sm text-slate-500">
-                за {durationHours} год
+                за {durationHours} {durationHours === 1 ? 'год' : 'год'}
               </span>
             </div>
           </div>

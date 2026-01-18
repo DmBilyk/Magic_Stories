@@ -41,7 +41,7 @@ class BookingAvailabilityService:
 
         while True:
             start_datetime = datetime.combine(check_date, current_time)
-            end_datetime = start_datetime + timedelta(hours=duration_hours)
+            end_datetime = start_datetime + timedelta(hours=float(duration_hours))
             end_time = end_datetime.time()
 
             if end_time > self.settings.closing_time:
@@ -60,7 +60,7 @@ class BookingAvailabilityService:
                 'available': is_available
             })
 
-            next_datetime = start_datetime + timedelta(hours=1)
+            next_datetime = start_datetime + timedelta(minutes=30)
             current_time = next_datetime.time()
 
             if current_time >= self.settings.closing_time:

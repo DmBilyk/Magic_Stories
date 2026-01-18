@@ -231,6 +231,9 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         """Validate duration is within allowed range."""
         settings = BookingSettings.get_settings()
 
+        if value % Decimal('0.5') != 0:
+            raise serializers.ValidationError("Duration must be in 30-minute increments (e.g., 1.0, 1.5, 2.0)")
+
         if value < settings.min_booking_hours:
             raise serializers.ValidationError(
                 f"Minimum booking duration is {settings.min_booking_hours} hour(s)"
@@ -423,7 +426,7 @@ class AvailabilityCheckSerializer(serializers.Serializer):
     """Check availability for specific date, duration, and location."""
 
     date = serializers.DateField()
-    duration_hours = serializers.IntegerField(min_value=1, max_value=24)
+    duration_hours = serializers.FloatField(min_value=0.5, max_value=24.0)
     location_id = serializers.UUIDField(required=False)
 
     def validate_date(self, value):

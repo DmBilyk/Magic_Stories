@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from datetime import date, datetime
-
+from decimal import Decimal
 from .models import StudioBooking, BookingSettings
 from .serializers import (
     StudioBookingSerializer,
@@ -82,7 +82,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         try:
             booking_date = datetime.strptime(booking_date, '%Y-%m-%d').date()
             booking_time = datetime.strptime(booking_time, '%H:%M').time()
-            duration_hours = int(duration_hours)
+            duration_hours = float(duration_hours)
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid date/time format'},
@@ -105,7 +105,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'], url_path='calculate-cost')
     def calculate_cost(self, request):
         """Calculate booking cost with optional services and location."""
-        duration_hours = request.data.get('duration_hours')
+        duration_hours = Decimal(str(request.data.get('duration_hours')))
         location_id = request.data.get('location_id')
         additional_service_ids = request.data.get('additional_service_ids', [])
 
@@ -137,7 +137,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         location_id = request.data.get('location_id')
         start_date = request.data.get('start_date')
         end_date = request.data.get('end_date')
-        duration_hours = request.data.get('duration_hours', 1)
+        duration_hours = float(request.data.get('duration_hours', 1.0))
 
         if not all([location_id, start_date, end_date]):
             return Response(
