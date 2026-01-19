@@ -22,12 +22,15 @@ export const formatTime = (time: string): string => {
 };
 
 export const formatTimeRange = (startTime: string, durationHours: number): string => {
+  if (!startTime) return '';
   const [hours, minutes] = startTime.split(':').map(Number);
   const startDate = new Date();
-  startDate.setHours(hours, minutes, 0);
+  startDate.setHours(hours, minutes, 0, 0);
+
+  const durationMinutes = Math.round(durationHours * 60);
 
   const endDate = new Date(startDate);
-  endDate.setHours(endDate.getHours() + durationHours);
+  endDate.setMinutes(endDate.getMinutes() + durationMinutes);
 
   return `${formatTime(startTime)} - ${formatTime(
     `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`
@@ -45,9 +48,11 @@ export const generateTimeSlots = (
 
   const openingMinutes = openHour * 60 + openMin;
   const closingMinutes = closeHour * 60 + closeMin;
-  const durationMinutes = durationHours * 60;
+  const durationMinutes = Math.round(durationHours * 60);
 
-  for (let time = openingMinutes; time + durationMinutes <= closingMinutes; time += 60) {
+  const stepMinutes = 30; // 30-minute increments to support 0.5h bookings
+
+  for (let time = openingMinutes; time + durationMinutes <= closingMinutes; time += stepMinutes) {
     const hours = Math.floor(time / 60);
     const minutes = time % 60;
     slots.push(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);

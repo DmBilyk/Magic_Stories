@@ -9,6 +9,7 @@ from .models import (
 )
 import logging
 
+from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
@@ -157,7 +158,12 @@ class ClothingAvailabilitySerializer(serializers.Serializer):
     clothing_item_id = serializers.UUIDField()
     booking_date = serializers.DateField()
     booking_time = serializers.TimeField()
-    duration_hours = serializers.IntegerField(min_value=1)
+    duration_hours = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        min_value=Decimal('0.5'),
+        max_value=Decimal('24.0')
+    )
     quantity = serializers.IntegerField(min_value=1, default=1)
 
 

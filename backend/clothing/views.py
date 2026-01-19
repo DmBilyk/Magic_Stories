@@ -200,7 +200,11 @@ class ClothingAvailabilityViewSet(viewsets.ViewSet):
             properties={
                 'booking_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
                 'booking_time': openapi.Schema(type=openapi.TYPE_STRING, format='time'),
-                'duration_hours': openapi.Schema(type=openapi.TYPE_INTEGER)
+                'duration_hours': openapi.Schema(
+                    type=openapi.TYPE_NUMBER,
+                    format=openapi.FORMAT_FLOAT,
+                    description='Booking duration in hours (supports 0.5 increments, e.g., 0.5, 1.0)'
+                )
             }
         )
     )
@@ -219,7 +223,7 @@ class ClothingAvailabilityViewSet(viewsets.ViewSet):
 
         result = []
         for item_data in available_items:
-            # 🔧 FIX: Передаємо context з request
+            # 🔧 FIX: provide request context to serializer
             item_serializer = ClothingItemListSerializer(
                 item_data['item'],
                 context={'request': request}

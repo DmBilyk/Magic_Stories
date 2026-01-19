@@ -1,13 +1,16 @@
 from decimal import Decimal
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from django.db import transaction
 from django.db.models import Q, Sum
+from django.apps import apps
+import importlib
 from .models import (
     ClothingItem,
     BookingClothingItem,
     ClothingRentalSettings
 )
+
 
 
 class ClothingAvailabilityService:
@@ -21,7 +24,7 @@ class ClothingAvailabilityService:
             clothing_item_id: str,
             booking_date,
             booking_time,
-            duration_hours: int,
+            duration_hours: Decimal,
             requested_quantity: int = 1,
             exclude_booking_id: str = None
     ) -> Tuple[bool, str, int]:
@@ -43,12 +46,13 @@ class ClothingAvailabilityService:
         if not item.is_available:
             return False, f"{item.name} is currently unavailable", 0
 
-        # Calculate available quantity for the time slot
+        # Normalize duration to Decimal and calculate available quantity for the time slot
+        duration_decimal = Decimal(str(duration_hours))
         available_qty = self._get_available_quantity(
             item,
             booking_date,
             booking_time,
-            duration_hours,
+            duration_decimal,
             exclude_booking_id
         )
 
@@ -66,16 +70,17 @@ class ClothingAvailabilityService:
             item: ClothingItem,
             booking_date,
             booking_time,
-            duration_hours: int,
+            duration_hours: Decimal,
             exclude_booking_id: str = None
     ) -> int:
         """Calculate available quantity for a time slot"""
-        from bookings.models import StudioBooking
-        from decimal import Decimal
+        # Dynamically get StudioBooking model to avoid static import errors
+        StudioBooking = apps.get_model('bookings', 'StudioBooking')
 
-        # Calculate end time
+        # Calculate end time using minutes (supports fractional hours)
         booking_datetime = datetime.combine(booking_date, booking_time)
-        duration_minutes = int(Decimal(str(duration_hours)) * 60)
+        duration_decimal = Decimal(str(duration_hours))
+        duration_minutes = int(duration_decimal * Decimal('60'))
         end_datetime = booking_datetime + timedelta(minutes=duration_minutes)
         end_time = end_datetime.time()
 
@@ -107,7 +112,7 @@ class ClothingAvailabilityService:
             self,
             booking_date,
             booking_time,
-            duration_hours: int
+            duration_hours: Decimal
     ) -> List[Dict]:
         """
         Get all available clothing items for a specific time slot
@@ -143,7 +148,7 @@ class ClothingAvailabilityService:
             clothing_items: List[Dict],
             booking_date,
             booking_time,
-            duration_hours: int,
+            duration_hours: Decimal,
             exclude_booking_id: str = None
     ) -> Tuple[bool, List[str]]:
         """
@@ -164,12 +169,13 @@ class ClothingAvailabilityService:
             ]
 
         errors = []
+        duration_decimal = Decimal(str(duration_hours))
         for item_data in clothing_items:
             is_available, message, _ = self.check_item_availability(
                 item_data['clothing_item_id'],
                 booking_date,
                 booking_time,
-                duration_hours,
+                duration_decimal,
                 item_data.get('quantity', 1),
                 exclude_booking_id
             )
@@ -301,7 +307,7 @@ class ClothingBookingService:
 
     def calculate_booking_with_clothing(
             self,
-            duration_hours: int,
+            duration_hours: Decimal,
             additional_service_ids: List[str],
             clothing_items: List[Dict],
             settings=None
@@ -311,7 +317,9 @@ class ClothingBookingService:
 
         This method is meant to be called from BookingCalculationService
         """
-        from bookings.services import BookingCalculationService
+        # Dynamically import BookingCalculationService to avoid static import issues
+        booking_module = importlib.import_module('bookings.services')
+        BookingCalculationService = getattr(booking_module, 'BookingCalculationService')
 
         # Get base booking cost (studios + services)
         booking_service = BookingCalculationService()
