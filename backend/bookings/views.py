@@ -22,7 +22,7 @@ from .services import (
     BookingCalculationService,
     BookingManagementService
 )
-
+from decimal import Decimal
 
 from payment_service.models import StudioPayment
 
@@ -82,7 +82,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         try:
             booking_date = datetime.strptime(booking_date, '%Y-%m-%d').date()
             booking_time = datetime.strptime(booking_time, '%H:%M').time()
-            duration_hours = int(duration_hours)
+            duration_hours = Decimal(str(duration_hours))
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid date/time format'},
@@ -116,7 +116,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
             )
 
         try:
-            duration_hours = int(duration_hours)
+            duration_hours = Decimal(str(duration_hours))
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid duration_hours'},
@@ -148,7 +148,7 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
         try:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            duration_hours = int(duration_hours)
+            duration_hours = Decimal(str(duration_hours))
         except (ValueError, TypeError):
             return Response(
                 {'error': 'Invalid date format'},

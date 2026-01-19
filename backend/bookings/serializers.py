@@ -94,6 +94,12 @@ class StudioBookingSerializer(serializers.ModelSerializer):
     end_time = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
 
+    duration_hours = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        min_value=Decimal('0.5')
+    )
+
     class Meta:
         model = StudioBooking
         fields = [
@@ -228,17 +234,27 @@ class StudioBookingSerializer(serializers.ModelSerializer):
         return value
 
     def validate_duration_hours(self, value):
-        """Validate duration is within allowed range."""
-        settings = BookingSettings.get_settings()
+        from decimal import Decimal
 
-        if value < settings.min_booking_hours:
+        settings = BookingSettings.get_settings()
+        value = Decimal(str(value))
+
+        if (value * 2) % 1 != 0:
             raise serializers.ValidationError(
-                f"Minimum booking duration is {settings.min_booking_hours} hour(s)"
+                "Duration must be in 30-minute increments (e.g., 0.5, 1.0, 1.5)"
             )
 
-        if value > settings.max_booking_hours:
+        min_hours = Decimal(str(settings.min_booking_hours))
+        max_hours = Decimal(str(settings.max_booking_hours))
+
+        if value < min_hours:
             raise serializers.ValidationError(
-                f"Maximum booking duration is {settings.max_booking_hours} hour(s)"
+                f"Minimum booking duration is {min_hours} hour(s)"
+            )
+
+        if value > max_hours:
+            raise serializers.ValidationError(
+                f"Maximum booking duration is {max_hours} hour(s)"
             )
 
         return value
@@ -263,7 +279,9 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             })
 
         start_datetime = datetime.combine(booking_date, booking_time)
-        end_datetime = start_datetime + timedelta(hours=duration_hours)
+        duration_decimal = Decimal(str(duration_hours))
+        duration_minutes = int(duration_decimal * 60)
+        end_datetime = start_datetime + timedelta(minutes=duration_minutes)
         end_time = end_datetime.time()
 
         if end_time > settings.closing_time:
@@ -360,7 +378,8 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         # 3. Розраховуємо початкову загальну вартість (Оренда + Послуги)
         # Формула: (ціна_за_годину * години) + послуги
-        base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
+        duration = Decimal(str(validated_data['duration_hours']))
+        base_cost = validated_data['base_price_per_hour'] * duration
         initial_total = base_cost + services_total
 
 
@@ -463,6 +482,13 @@ class AdminBookingSerializer(serializers.ModelSerializer):
     )
     end_time = serializers.SerializerMethodField()
     payment_details = serializers.SerializerMethodField()
+
+    duration_hours = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        min_value=Decimal('0.5'),
+        required=False
+    )
 
     class Meta:
         model = StudioBooking
@@ -609,7 +635,8 @@ class AdminBookingSerializer(serializers.ModelSerializer):
         validated_data['services_total'] = services_total
 
         # 3️⃣ Розраховуємо початкову загальну вартість (Оренда + Послуги)
-        base_cost = validated_data['base_price_per_hour'] * validated_data['duration_hours']
+        duration = Decimal(str(validated_data['duration_hours']))
+        base_cost = validated_data['base_price_per_hour'] * duration
         initial_total = base_cost + services_total
 
         # 4️⃣ Встановлюємо deposit_percentage

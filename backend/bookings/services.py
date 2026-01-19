@@ -7,6 +7,10 @@ import logging
 from .models import StudioBooking, BookingSettings
 from studios.models import AdditionalService, Location
 
+from decimal import Decimal
+from typing import Union
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +64,7 @@ class BookingAvailabilityService:
                 'available': is_available
             })
 
-            next_datetime = start_datetime + timedelta(hours=1)
+            next_datetime = start_datetime + timedelta(minutes=30)
             current_time = next_datetime.time()
 
             if current_time >= self.settings.closing_time:
@@ -186,7 +190,7 @@ class BookingCalculationService:
 
     @staticmethod
     def calculate_booking_cost(
-            duration_hours: int,
+            duration_hours: Union[int, float, Decimal],
             location_id: str = None,
             additional_service_ids: List[str] = None,
             settings: BookingSettings = None
@@ -204,7 +208,9 @@ class BookingCalculationService:
         else:
             hourly_rate = settings.base_price_per_hour
 
+        duration_hours = Decimal(str(duration_hours))
         base_cost = hourly_rate * duration_hours
+
         services_cost = Decimal('0.00')
 
         if additional_service_ids:

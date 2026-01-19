@@ -33,8 +33,10 @@ class StudioBooking(models.Model):
     # Booking Details
     booking_date = models.DateField(verbose_name="Booking Date")
     booking_time = models.TimeField(verbose_name="Booking Time")
-    duration_hours = models.PositiveIntegerField(
-        validators=[MinValueValidator(1)],
+    duration_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        validators=[MinValueValidator(Decimal('0.5'))],
         verbose_name="Duration (hours)"
     )
 
@@ -174,16 +176,22 @@ class BookingSettings(models.Model):
     closing_time = models.TimeField(default='21:00', verbose_name="Closing Time")
 
     # Booking Rules
-    min_booking_hours = models.PositiveIntegerField(
-        default=1,
-        validators=[MinValueValidator(1)],
+    min_booking_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        default=Decimal('0.5'),
+        validators=[MinValueValidator(Decimal('0.5'))],
         verbose_name="Minimum Booking Hours"
     )
-    max_booking_hours = models.PositiveIntegerField(
-        default=8,
-        validators=[MinValueValidator(1)],
+
+    max_booking_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        default=Decimal('8.0'),
+        validators=[MinValueValidator(Decimal('0.5'))],
         verbose_name="Maximum Booking Hours"
     )
+
     advance_booking_days = models.PositiveIntegerField(
         default=60,
         validators=[MinValueValidator(1)],
