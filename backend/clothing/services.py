@@ -71,10 +71,12 @@ class ClothingAvailabilityService:
     ) -> int:
         """Calculate available quantity for a time slot"""
         from bookings.models import StudioBooking
+        from decimal import Decimal
 
         # Calculate end time
         booking_datetime = datetime.combine(booking_date, booking_time)
-        end_datetime = booking_datetime + timedelta(hours=duration_hours)
+        duration_minutes = int(Decimal(str(duration_hours)) * 60)
+        end_datetime = booking_datetime + timedelta(minutes=duration_minutes)
         end_time = end_datetime.time()
 
         # Find overlapping bookings

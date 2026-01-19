@@ -85,11 +85,13 @@ class ClothingItem(models.Model):
         """Calculate available quantity for a specific datetime"""
         from bookings.models import StudioBooking
         from datetime import datetime, timedelta
+        from decimal import Decimal
 
         # Get bookings that overlap with requested time
+        duration_minutes = int(Decimal(str(duration_hours)) * 60)
         booking_end_time = (
                 datetime.combine(booking_date, booking_time) +
-                timedelta(hours=duration_hours)
+                timedelta(minutes=duration_minutes)
         ).time()
 
         overlapping_bookings = StudioBooking.objects.filter(

@@ -297,7 +297,8 @@ class StudioBookingSerializer(serializers.ModelSerializer):
 
         for conflict in conflicts:
             conflict_start = datetime.combine(booking_date, conflict.booking_time)
-            conflict_end = conflict_start + timedelta(hours=conflict.duration_hours)
+            conflict_duration_minutes = int(Decimal(str(conflict.duration_hours)) * 60)
+            conflict_end = conflict_start + timedelta(minutes=conflict_duration_minutes)
 
             if (start_datetime < conflict_end and end_datetime > conflict_start):
                 raise serializers.ValidationError({
