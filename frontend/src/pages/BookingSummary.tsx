@@ -18,6 +18,19 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { formatCurrency, formatDate, formatTimeRange } from '../utils/dateTime';
 
+const formatHoursLabel = (hours: number): string => {
+  if (!Number.isFinite(hours)) return 'годин';
+  // Fractional hours like 1.5 -> use 'години'
+  if (hours % 1 !== 0) return 'години';
+  const h = Math.abs(Math.floor(hours));
+  const rem100 = h % 100;
+  if (rem100 >= 11 && rem100 <= 14) return 'годин';
+  const rem10 = h % 10;
+  if (rem10 === 1) return 'година';
+  if (rem10 >= 2 && rem10 <= 4) return 'години';
+  return 'годин';
+};
+
 export const BookingSummary = () => {
   const navigate = useNavigate();
   const {
@@ -250,7 +263,7 @@ export const BookingSummary = () => {
                   <p className="text-slate-900 font-medium">
                     {formatTimeRange(bookingTime, durationHours)}
                     <span className="text-slate-500 ml-2 font-normal">
-                      ({durationHours} {durationHours === 1 ? 'година' : 'годин'})
+                      ({durationHours} {formatHoursLabel(durationHours)})
                     </span>
                   </p>
                 </div>
@@ -457,3 +470,4 @@ export const BookingSummary = () => {
     </div>
   );
 };
+

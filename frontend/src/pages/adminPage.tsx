@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar, Plus, X, Clock, User, MapPin, Phone, Mail, Search,
-  ChevronLeft, ChevronRight, AlertCircle, Loader2, Shirt, Edit2, Check
+  Calendar, Plus, X, Clock, User, MapPin, Phone, Search,
+  ChevronLeft, ChevronRight, AlertCircle, Loader2, Check
 } from 'lucide-react';
 import { clothingService } from '../services/api';
 
@@ -120,7 +120,9 @@ const AdminBookingPanel = () => {
   const [error, setError] = useState('');
 
   useEffect(() => { loadLocations(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadBookings(); }, [currentDate, selectedLocation]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { filterBookings(); }, [bookings, selectedStatus, searchQuery]);
 
   const loadLocations = async () => {
@@ -288,7 +290,7 @@ const AdminBookingPanel = () => {
 const BookingCard: React.FC<{ booking: Booking; onStatusChange: (id: string, s: string) => void }> = ({ booking, onStatusChange }) => {
   const [expanded, setExpanded] = useState(false);
 
-  const statusColors: any = {
+  const statusColors: Record<string, string> = {
     pending_payment: 'bg-yellow-100 text-yellow-800',
     paid: 'bg-blue-100 text-blue-800',
     confirmed: 'bg-green-100 text-green-800',
@@ -299,7 +301,11 @@ const BookingCard: React.FC<{ booking: Booking; onStatusChange: (id: string, s: 
   const getEndTime = (time: string, duration: number) => {
     if (!time) return '';
     const [h, m] = time.split(':').map(Number);
-    return `${(h + duration).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    const durationMinutes = Math.round(duration * 60);
+    const total = h * 60 + m + durationMinutes;
+    const endH = Math.floor(total / 60) % 24;
+    const endM = total % 60;
+    return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
   };
 
   return (
@@ -349,10 +355,10 @@ const BookingCard: React.FC<{ booking: Booking; onStatusChange: (id: string, s: 
               {booking.clothing_items && booking.clothing_items.length > 0 && (
                 <>
                   <div className="pt-2 border-t font-medium">Одяг:</div>
-                  {booking.clothing_items.map((item: any, idx: number) => (
+                  {booking.clothing_items.map((item: { clothing_item: ClothingItem; quantity: number }, idx: number) => (
                     <div key={idx} className="flex justify-between text-slate-600 pl-4">
                       <span>{item.clothing_item?.name || 'Item'} x{item.quantity}</span>
-                      <span>{formatCurrency(parseFloat(item.clothing_item?.price || 0) * item.quantity)}</span>
+                      <span>{formatCurrency(parseFloat(item.clothing_item?.price || '0') * item.quantity)}</span>
                     </div>
                   ))}
                 </>
@@ -439,7 +445,7 @@ const CreateBookingModal: React.FC<{
   // Loaders
   useEffect(() => {
     fetchAPI(`${API_BASE}/services/`)
-      .then(data => setServices(data.filter((s: any) => s.is_active)))
+      .then((data: Service[]) => setServices(data.filter((s: Service) => s.is_active)))
       .catch(console.error);
 
     setLoadingClothing(true);
@@ -609,8 +615,8 @@ const CreateBookingModal: React.FC<{
                   onChange={(e) => setFormData({...formData, durationHours: Number(e.target.value), bookingTime: ''})}
                   className="w-full px-3 py-2 border rounded"
                 >
-                  {[1,2,3,4,5,6,7,8].map(h => (
-                    <option key={h} value={h}>{h} год</option>
+                  {Array.from({ length: 16 }, (_, i) => (i + 1) / 2).map((h) => (
+                    <option key={h} value={h}>{h % 1 === 0 ? `${Math.round(h)} год` : `${h} год`}</option>
                   ))}
                 </select>
               </div>
