@@ -23,7 +23,7 @@ class BookingAvailabilityService:
     def get_available_slots(
             self,
             check_date: date,
-            duration_hours: int,
+            duration_hours: Union[int, float, Decimal],
             location_id: str = None
     ) -> List[Dict]:
         """Get all available time slots for date, duration, and optional location."""
@@ -45,7 +45,9 @@ class BookingAvailabilityService:
 
         while True:
             start_datetime = datetime.combine(check_date, current_time)
-            end_datetime = start_datetime + timedelta(hours=duration_hours)
+            duration_decimal = Decimal(str(duration_hours))
+            duration_minutes = int(duration_decimal * 60)
+            end_datetime = start_datetime + timedelta(minutes=duration_minutes)
             end_time = end_datetime.time()
 
             if end_time > self.settings.closing_time:
@@ -96,7 +98,7 @@ class BookingAvailabilityService:
             self,
             booking_date: date,
             booking_time: time,
-            duration_hours: int,
+            duration_hours: Union[int, float, Decimal],
             location_id: str,
             exclude_booking_id: str = None
     ) -> Tuple[bool, str]:
@@ -117,7 +119,9 @@ class BookingAvailabilityService:
             return False, f"Studio opens at {self.settings.opening_time}"
 
         start_datetime = datetime.combine(booking_date, booking_time)
-        end_datetime = start_datetime + timedelta(hours=duration_hours)
+        duration_decimal = Decimal(str(duration_hours))
+        duration_minutes = int(duration_decimal * 60)
+        end_datetime = start_datetime + timedelta(minutes=duration_minutes)
         end_time = end_datetime.time()
 
         if end_time > self.settings.closing_time:
@@ -134,7 +138,8 @@ class BookingAvailabilityService:
 
         for conflict in conflicts:
             conflict_start = datetime.combine(booking_date, conflict.booking_time)
-            conflict_end = conflict_start + timedelta(hours=conflict.duration_hours)
+            conflict_duration_minutes = int(Decimal(str(conflict.duration_hours)) * 60)
+            conflict_end = conflict_start + timedelta(minutes=conflict_duration_minutes)
 
             if start_datetime < conflict_end and end_datetime > conflict_start:
                 return False, f"Time slot conflicts with existing booking at {conflict.booking_time}"
@@ -144,7 +149,7 @@ class BookingAvailabilityService:
     def get_next_available_slot(
             self,
             start_date: date,
-            duration_hours: int,
+            duration_hours: Union[int, float, Decimal],
             location_id: str = None,
             days_to_check: int = 7
     ) -> Optional[Dict]:
@@ -171,7 +176,7 @@ class BookingAvailabilityService:
             location_id: str,
             start_date: date,
             end_date: date,
-            duration_hours: int = 1
+            duration_hours: Union[int, float, Decimal] = 1
     ) -> Dict[str, List[Dict]]:
         """Get availability calendar for specific location within date range."""
         calendar = {}

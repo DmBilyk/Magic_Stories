@@ -442,7 +442,12 @@ class AvailabilityCheckSerializer(serializers.Serializer):
     """Check availability for specific date, duration, and location."""
 
     date = serializers.DateField()
-    duration_hours = serializers.IntegerField(min_value=1, max_value=24)
+    duration_hours = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        min_value=Decimal('0.5'),
+        max_value=Decimal('24.0')
+    )
     location_id = serializers.UUIDField(required=False)
 
     def validate_date(self, value):

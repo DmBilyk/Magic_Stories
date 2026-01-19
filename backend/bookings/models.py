@@ -142,12 +142,14 @@ class StudioBooking(models.Model):
     def get_end_time(self):
         """Calculate booking end time"""
         from datetime import datetime, timedelta
+        from decimal import Decimal
 
         if not self.booking_date or not self.booking_time:
             return None
 
         start_datetime = datetime.combine(self.booking_date, self.booking_time)
-        end_datetime = start_datetime + timedelta(hours=self.duration_hours)
+        duration_minutes = int(Decimal(str(self.duration_hours)) * 60)
+        end_datetime = start_datetime + timedelta(minutes=duration_minutes)
         return end_datetime.time()
 
 
