@@ -87,7 +87,8 @@ class BookingAvailabilityService:
 
         for booking in existing_bookings:
             booking_start = datetime.combine(check_date, booking.booking_time)
-            booking_end = booking_start + timedelta(hours=booking.duration_hours)
+            booking_duration_minutes = int(Decimal(str(booking.duration_hours)) * 60)
+            booking_end = booking_start + timedelta(minutes=booking_duration_minutes)
 
             if slot_start < booking_end and slot_end > booking_start:
                 return False

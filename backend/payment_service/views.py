@@ -171,10 +171,12 @@ def process_liqpay_payment(data: str, signature: str) -> HttpResponse:
         logger.error(f"❌ Payment {order_id} NOT FOUND in database")
         return HttpResponse(status=404)
 
-    # Перевірка суми
-    if str(payment.amount) != str(amount):
-        logger.critical(f"❌ AMOUNT MISMATCH! Expected: {payment.amount}, Got: {amount}")
-        return HttpResponse(status=400)
+    expected_amount = Decimal(str(payment.amount))
+    received_amount = Decimal(str(amount))
+
+    if expected_amount != received_amount:
+        logger.critical(f"❌ AMOUNT MISMATCH! Expected: {expected_amount}, Got: {received_amount}")
+
 
     # Якщо вже оброблений
     if payment.liqpay_status == status and payment.is_paid:
