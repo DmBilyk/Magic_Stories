@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock, User, ArrowLeft, Plus,
@@ -26,8 +26,44 @@ import {
   normalizePhoneNumber
 } from '../utils/validation';
 
-// UUID локації 1 (мінімум 1 година)
-const LOCATION_1_UUID = '136eade1-873d-48cb-a604-2f5e54706f02'; // 🔥 ЗАМІНИТИ на реальний UUID
+const LOCATION_1_UUID = '136eade1-873d-48cb-a604-2f5e54706f02';
+
+// 🚀 Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// 🚀 Простий кеш для API
+const apiCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 хвилин
+
+function getCached<T>(key: string): T | null {
+  const cached = apiCache.get(key);
+  if (!cached) return null;
+
+  if (Date.now() - cached.timestamp > CACHE_TTL) {
+    apiCache.delete(key);
+    return null;
+  }
+
+  return cached.data as T;
+}
+
+function setCache(key: string, data: any): void {
+  apiCache.set(key, { data, timestamp: Date.now() });
+}
 
 export const BookingForm = () => {
   const navigate = useNavigate();
@@ -49,23 +85,31 @@ export const BookingForm = () => {
   const [services, setServices] = useState<AdditionalService[]>([]);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
 
-  // Form states
-  const [firstName, setFirstName] = useState(contactInfo.firstName || '');
-  const [lastName, setLastName] = useState(contactInfo.lastName || '');
-  const [phone, setPhone] = useState(contactInfo.phone || '');
-  const [email, setEmail] = useState(contactInfo.email || '');
-  const [notes, setNotes] = useState(contactInfo.notes || '');
+  // 🚀 Об'єднуємо form states в один об'єкт для менших ре-рендерів
+  const [formData, setFormData] = useState({
+    firstName: contactInfo.firstName || '',
+    lastName: contactInfo.lastName || '',
+    phone: contactInfo.phone || '',
+    email: contactInfo.email || '',
+    notes: contactInfo.notes || '',
+  });
 
   const [loading, setLoading] = useState(true);
   const [checkingSlots, setCheckingSlots] = useState(false);
   const [error, setError] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Визначаємо мінімальну тривалість залежно від локації
-  const getMinDuration = (): number => {
+  // 🚀 Debounce для перевірки слотів
+  const debouncedDate = useDebounce(bookingDate, 300);
+  const debouncedDuration = useDebounce(durationHours, 300);
+
+  // 🚀 Ref для відстеження попереднього запиту
+  const previousCheckRef = useRef<string>('');
+
+  const getMinDuration = useCallback((): number => {
     if (!selectedLocation) return 0.5;
     return selectedLocation.id === LOCATION_1_UUID ? 1 : 0.5;
-  };
+  }, [selectedLocation]);
 
   useEffect(() => {
     if (!selectedLocation) {
@@ -75,13 +119,13 @@ export const BookingForm = () => {
     loadInitialData();
   }, [selectedLocation, navigate]);
 
+  // 🚀 Оптимізована перевірка availability з debounce і кешем
   useEffect(() => {
-    if (bookingDate && selectedLocation && settings && durationHours > 0) {
+    if (debouncedDate && selectedLocation && settings && debouncedDuration > 0) {
       checkAvailability();
     }
-  }, [bookingDate, durationHours, selectedLocation, settings]);
+  }, [debouncedDate, debouncedDuration, selectedLocation, settings]);
 
-  // При зміні локації — перевіряємо мінімальну тривалість
   useEffect(() => {
     if (selectedLocation) {
       const minDur = getMinDuration();
@@ -89,15 +133,40 @@ export const BookingForm = () => {
         setDurationHours(minDur);
       }
     }
-  }, [selectedLocation]);
+  }, [selectedLocation, getMinDuration]);
 
+  // 🚀 Кешування settings і services
   const loadInitialData = async () => {
     try {
       setLoading(true);
+
+      // Перевіряємо кеш
+      const cachedSettings = getCached<BookingSettings>('booking_settings');
+      const cachedServices = getCached<AdditionalService[]>('additional_services');
+
+      if (cachedSettings && cachedServices) {
+        setSettings(cachedSettings);
+        setServices(cachedServices.filter((s) => s.isActive));
+
+        const minDur = getMinDuration();
+        if (!durationHours || durationHours < minDur) {
+          setDurationHours(minDur);
+        }
+
+        setLoading(false);
+        return;
+      }
+
+      // Якщо немає в кеші - робимо запит
       const [settingsData, servicesData] = await Promise.all([
         bookingService.getSettings(),
         serviceAPI.getAll(),
       ]);
+
+      // Зберігаємо в кеш
+      setCache('booking_settings', settingsData);
+      setCache('additional_services', servicesData);
+
       setSettings(settingsData);
 
       const minDur = getMinDuration();
@@ -115,14 +184,37 @@ export const BookingForm = () => {
     }
   };
 
+  // 🚀 Оптимізована перевірка з кешем і dedupe
   const checkAvailability = async () => {
-    if (!selectedLocation || !bookingDate || !durationHours) return;
+    if (!selectedLocation || !debouncedDate || !debouncedDuration) return;
+
+    // Генеруємо ключ для запиту
+    const checkKey = `${debouncedDate}-${debouncedDuration}-${selectedLocation.id}`;
+
+    // Якщо це той самий запит - пропускаємо
+    if (previousCheckRef.current === checkKey) {
+      return;
+    }
+
+    previousCheckRef.current = checkKey;
+
+    // Перевіряємо кеш
+    const cacheKey = `availability_${checkKey}`;
+    const cached = getCached<TimeSlot[]>(cacheKey);
+
+    if (cached) {
+      setAvailableSlots(cached);
+      if (bookingTime && !cached.some((s) => s.startTime === bookingTime && s.available)) {
+        setBookingTime('');
+      }
+      return;
+    }
 
     try {
       setCheckingSlots(true);
       const response = await availabilityService.checkAvailability(
-        bookingDate,
-        durationHours,
+        debouncedDate,
+        debouncedDuration,
         selectedLocation.id
       );
 
@@ -131,6 +223,10 @@ export const BookingForm = () => {
         endTime: slot.end_time,
         available: slot.available,
       }));
+
+      // Зберігаємо в кеш
+      setCache(cacheKey, formattedSlots);
+
       setAvailableSlots(formattedSlots);
       setError('');
 
@@ -145,53 +241,58 @@ export const BookingForm = () => {
     }
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 🚀 Оптимізовані обробники форми
+  const updateFormField = useCallback((field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setValidationErrors(prev => ({ ...prev, [field]: '' }));
+  }, []);
+
+  const handlePhoneChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (value.length < 4) {
-      setPhone('+380');
+      updateFormField('phone', '+380');
       return;
     }
     const numericValue = value.replace(/[^\d+]/g, '');
     const formattedValue = numericValue.startsWith('+') ? numericValue : `+${numericValue}`;
     if (!formattedValue.startsWith('+380')) {
        if (formattedValue.startsWith('+0')) {
-         setPhone('+380' + formattedValue.substring(2));
+         updateFormField('phone', '+380' + formattedValue.substring(2));
        } else {
-         setPhone('+380');
+         updateFormField('phone', '+380');
        }
        return;
     }
     if (formattedValue.length <= 13) {
-      setPhone(formattedValue);
-      setValidationErrors((prev) => ({ ...prev, phone: '' }));
+      updateFormField('phone', formattedValue);
     }
-  };
+  }, [updateFormField]);
 
-  const handlePhoneFocus = () => {
-    if (!phone) {
-      setPhone('+380');
+  const handlePhoneFocus = useCallback(() => {
+    if (!formData.phone) {
+      updateFormField('phone', '+380');
     }
-  };
+  }, [formData.phone, updateFormField]);
 
-  const validateForm = (): boolean => {
+  const validateForm = useCallback((): boolean => {
     const errors: Record<string, string> = {};
 
-    const firstNameValidation = validateName(firstName, "Ім'я");
+    const firstNameValidation = validateName(formData.firstName, "Ім'я");
     if (!firstNameValidation.valid) {
       errors.firstName = firstNameValidation.message;
     }
 
-    const lastNameValidation = validateName(lastName, "Прізвище");
+    const lastNameValidation = validateName(formData.lastName, "Прізвище");
     if (!lastNameValidation.valid) {
       errors.lastName = lastNameValidation.message;
     }
 
-    const phoneValidation = validatePhoneNumber(phone);
+    const phoneValidation = validatePhoneNumber(formData.phone);
     if (!phoneValidation.valid) {
       errors.phone = phoneValidation.message;
     }
 
-    const emailValidation = validateEmail(email);
+    const emailValidation = validateEmail(formData.email);
     if (!emailValidation.valid) {
       errors.email = emailValidation.message;
     }
@@ -204,8 +305,8 @@ export const BookingForm = () => {
       errors.time = 'Будь ласка, оберіть час';
     }
 
-    if (notes.trim()) {
-      const notesValidation = validateNotes(notes);
+    if (formData.notes.trim()) {
+      const notesValidation = validateNotes(formData.notes);
       if (!notesValidation.valid) {
         errors.notes = notesValidation.message;
       }
@@ -213,61 +314,61 @@ export const BookingForm = () => {
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
-  };
+  }, [formData, bookingDate, bookingTime]);
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!validateForm()) {
       setError("Будь ласка, заповніть всі обов'язкові поля коректно");
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    const normalizedPhone = normalizePhoneNumber(phone);
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedFirstName = firstName.trim();
-    const normalizedLastName = lastName.trim();
-    const normalizedNotes = notes.trim();
+    const normalizedPhone = normalizePhoneNumber(formData.phone);
+    const normalizedEmail = formData.email.trim().toLowerCase();
 
     setContactInfo({
-      firstName: normalizedFirstName,
-      lastName: normalizedLastName,
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
       phone: normalizedPhone,
       email: normalizedEmail,
-      notes: normalizedNotes
+      notes: formData.notes.trim()
     });
 
     navigate('/clothing');
-  };
+  }, [validateForm, formData, setContactInfo, navigate]);
 
-  const toggleService = (service: AdditionalService) => {
+  const toggleService = useCallback((service: AdditionalService) => {
     setSelectedServices((prev) =>
       prev.find((s) => s.id === service.id)
         ? prev.filter((s) => s.id !== service.id)
         : [...prev, service]
     );
-  };
+  }, [setSelectedServices]);
 
-  const calculateTotal = () => {
+  // 🚀 Мемоїзація розрахунків
+  const totalCost = useMemo(() => {
     if (!selectedLocation) return 0;
     const basePrice = parseFloat(selectedLocation.hourlyRate) * durationHours;
     const servicesPrice = selectedServices.reduce((sum, s) => sum + parseFloat(s.price), 0);
     return basePrice + servicesPrice;
-  };
+  }, [selectedLocation, durationHours, selectedServices]);
+
+  const durationOptions = useMemo(() => {
+    if (!settings) return [];
+    const minDuration = getMinDuration();
+    const maxDuration = settings.maxBookingHours ? parseFloat(settings.maxBookingHours.toString()) : 8;
+    const options: number[] = [];
+    for (let h = minDuration; h <= maxDuration; h += 0.5) {
+      options.push(h);
+    }
+    return options;
+  }, [settings, getMinDuration]);
 
   if (loading) {
     return <BookingFormSkeleton />;
   }
 
   if (!settings || !selectedLocation) return null;
-
-  const minDuration = getMinDuration();
-  const maxDuration = settings.maxBookingHours ? parseFloat(settings.maxBookingHours.toString()) : 8;
-
-  // Генеруємо опції тривалості з кроком 0.5
-  const durationOptions: number[] = [];
-  for (let h = minDuration; h <= maxDuration; h += 0.5) {
-    durationOptions.push(h);
-  }
 
   const today = getTodayDate();
   const maxDate = getMaxBookingDate(settings.advanceBookingDays || 30);
@@ -404,7 +505,7 @@ export const BookingForm = () => {
               ) : availableSlots.length === 0 ? (
                 <div className="text-center py-8 bg-slate-50 border border-slate-100">
                   <p className="text-slate-600 font-medium">Немає вільних слотів</p>
-                  <p className="text-sm text-slate-400 mt-1">Зміниіть дату або тривалість</p>
+                  <p className="text-sm text-slate-400 mt-1">Змініть дату або тривалість</p>
                 </div>
               ) : (
                 <div>
@@ -504,11 +605,8 @@ export const BookingForm = () => {
                 </label>
                 <input
                   type="text"
-                  value={firstName}
-                  onChange={(e) => {
-                    setFirstName(e.target.value);
-                    setValidationErrors((prev) => ({ ...prev, firstName: '' }));
-                  }}
+                  value={formData.firstName}
+                  onChange={(e) => updateFormField('firstName', e.target.value)}
                   className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
                     validationErrors.firstName ? 'border-red-400' : 'border-slate-200'
                   }`}
@@ -525,11 +623,8 @@ export const BookingForm = () => {
                 </label>
                 <input
                   type="text"
-                  value={lastName}
-                  onChange={(e) => {
-                    setLastName(e.target.value);
-                    setValidationErrors((prev) => ({ ...prev, lastName: '' }));
-                  }}
+                  value={formData.lastName}
+                  onChange={(e) => updateFormField('lastName', e.target.value)}
                   className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
                     validationErrors.lastName ? 'border-red-400' : 'border-slate-200'
                   }`}
@@ -547,7 +642,7 @@ export const BookingForm = () => {
                 <div className="relative">
                   <input
                     type="tel"
-                    value={phone}
+                    value={formData.phone}
                     onFocus={handlePhoneFocus}
                     onChange={handlePhoneChange}
                     className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none tracking-wider font-medium ${
@@ -556,9 +651,9 @@ export const BookingForm = () => {
                     placeholder="+380XXXXXXXXX"
                     maxLength={13}
                   />
-                  {phone.length > 4 && phone.length < 13 && (
+                  {formData.phone.length > 4 && formData.phone.length < 13 && (
                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
-                        ще {13 - phone.length} цифр
+                        ще {13 - formData.phone.length} цифр
                      </div>
                   )}
                 </div>
@@ -574,11 +669,8 @@ export const BookingForm = () => {
                 </label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setValidationErrors((prev) => ({ ...prev, email: '' }));
-                  }}
+                  value={formData.email}
+                  onChange={(e) => updateFormField('email', e.target.value)}
                   className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none ${
                     validationErrors.email ? 'border-red-400' : 'border-slate-200'
                   }`}
@@ -595,11 +687,8 @@ export const BookingForm = () => {
                 Нотатки
               </label>
               <textarea
-                value={notes}
-                onChange={(e) => {
-                  setNotes(e.target.value);
-                  setValidationErrors((prev) => ({ ...prev, notes: '' }));
-                }}
+                value={formData.notes}
+                onChange={(e) => updateFormField('notes', e.target.value)}
                 rows={3}
                 className={`w-full px-5 py-4 border focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none rounded-none ${
                   validationErrors.notes ? 'border-red-400' : 'border-slate-200'
@@ -621,7 +710,7 @@ export const BookingForm = () => {
             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">До сплати</p>
             <div className="flex items-baseline gap-2 justify-center sm:justify-start">
               <span className="text-3xl font-bold text-slate-900">
-                {formatCurrency(calculateTotal())}
+                {formatCurrency(totalCost)}
               </span>
               <span className="text-sm text-slate-500">
                 за {formatDuration(durationHours)}
