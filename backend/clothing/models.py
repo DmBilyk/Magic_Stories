@@ -4,7 +4,10 @@ from decimal import Decimal
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
-
+from PIL import Image
+from io import BytesIO
+from django.core.files.base import ContentFile
+import os
 
 class ClothingCategory(models.Model):
     """Categories for organizing clothing items"""
@@ -122,6 +125,8 @@ class ClothingImage(models.Model):
         related_name='images'
     )
     image = models.ImageField(upload_to='clothing_images/')
+    # Додаємо поле для мініатюри
+    image_thumbnail = models.ImageField(upload_to='clothing_images/thumbnails/', blank=True, null=True)
     alt_text = models.CharField(max_length=200, blank=True)
     order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -134,6 +139,44 @@ class ClothingImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.clothing_item.name}"
+
+    def save(self, *args, **kwargs):
+        # Якщо зображення є, а мініатюри немає або змінилось основне фото
+        if self.image:
+            self.make_thumbnail()
+        super().save(*args, **kwargs)
+
+    def make_thumbnail(self):
+        """Generates a thumbnail for the image"""
+        if not self.image:
+            return
+
+        # Відкриваємо зображення
+        img = Image.open(self.image)
+
+        # Конвертуємо в RGB, якщо це PNG/RGBA, щоб зберегти як JPEG
+        if img.mode in ('RGBA', 'LA'):
+            background = Image.new(img.mode[:-1], img.size, '#fff')
+            background.paste(img, img.split()[-1])
+            img = background
+
+        # Створюємо копію для мініатюри
+        thumb = img.copy()
+
+        # Розмір мініатюри (наприклад, 400x500 для карток товарів)
+        thumb.thumbnail((400, 500), Image.Resampling.LANCZOS)
+
+        # Зберігаємо в пам'ять
+        thumb_io = BytesIO()
+        thumb.save(thumb_io, 'JPEG', quality=85)
+
+        # Створюємо ім'я файлу
+        name = os.path.basename(self.image.name)
+        thumb_name, _ = os.path.splitext(name)
+        thumb_filename = f"{thumb_name}_thumb.jpg"
+
+        # Зберігаємо файл у поле image_thumbnail, save=False щоб не викликати рекурсію
+        self.image_thumbnail.save(thumb_filename, ContentFile(thumb_io.getvalue()), save=False)
 
 
 class BookingClothingItem(models.Model):

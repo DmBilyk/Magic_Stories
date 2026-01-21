@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart, Search, Plus, Minus, Shirt } from 'lucide-react';
 import { useBooking } from '../context/BookingContext';
 import { clothingService } from '../services/api';
+// Імпортуємо наш новий компонент
+import { OptimizedImage } from '../components/OptimizedImage';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
+import { ClothingRentalSkeleton } from '../components/Skeleton';
 import type { ClothingCategory, ClothingItem } from '../types';
 import { formatCurrency } from '../utils/dateTime';
-import { ClothingRentalSkeleton } from '../components/Skeleton';
 
 export const ClothingRental = () => {
   const navigate = useNavigate();
@@ -28,12 +30,13 @@ export const ClothingRental = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Якщо користувач спробував зайти сюди без вибору дати - повертаємо назад
     if (!selectedLocation || !bookingDate || !bookingTime) {
       navigate('/booking');
       return;
     }
     loadData();
-  }, [selectedLocation, bookingDate, bookingTime]);
+  }, [selectedLocation, bookingDate, bookingTime, navigate]);
 
   const loadData = async () => {
     try {
@@ -46,27 +49,21 @@ export const ClothingRental = () => {
       setItems(itemsData);
       setError('');
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : 'Failed to load clothing items');
     } finally {
       setLoading(false);
     }
   };
 
+  // Фільтрація товарів (пошук + категорія)
   const filteredItems = items.filter((item) => {
-
     const matchesCategory = !selectedCategory || item.category?.id === selectedCategory;
-
-
     const query = searchQuery.toLowerCase().trim();
-
-
     const name = (item.name || '').toLowerCase();
     const description = (item.description || '').toLowerCase();
 
-    const matchesSearch =
-      !query ||
-      name.includes(query) ||
-      description.includes(query);
+    const matchesSearch = !query || name.includes(query) || description.includes(query);
 
     return matchesCategory && matchesSearch;
   });
@@ -84,34 +81,38 @@ export const ClothingRental = () => {
     const currentQuantity = getItemQuantity(item.id);
     const newQuantity = currentQuantity + 1;
 
+    // Перевірка 1: Чи не перевищуємо загальну кількість цього товару
     if (newQuantity > item.quantity) {
-      setError(`Only ${item.quantity} units available`);
+      setError(`Доступно лише ${item.quantity} шт.`);
       return;
     }
 
+    // Перевірка 2: Максимум 10 позицій (якщо це новий товар)
     if (clothingCart.length >= 10 && currentQuantity === 0) {
-      setError('Maximum 10 different clothing items per booking');
+      setError('Максимум 10 різних речей на одне бронювання');
       return;
     }
 
     try {
+      // Підготовка даних для перевірки на бекенді
       const formattedDate = bookingDate.includes('T') ? bookingDate.split('T')[0] : bookingDate;
       const formattedTime = bookingTime.includes(':') ? bookingTime.substring(0, 5) : bookingTime;
 
-
-    const availabilityCheck = await clothingService.checkAvailability({
-      itemId: item.id,
-      bookingDate: formattedDate,
-      bookingTime: formattedTime,
-      durationHours: durationHours,
-      quantity: newQuantity
-    });
+      // Запит на бекенд: чи вільна річ у цей час?
+      const availabilityCheck = await clothingService.checkAvailability({
+        itemId: item.id,
+        bookingDate: formattedDate,
+        bookingTime: formattedTime,
+        durationHours: durationHours,
+        quantity: newQuantity
+      });
 
       if (!availabilityCheck.available) {
         setError(availabilityCheck.message);
         return;
       }
 
+      // Якщо все ок - оновлюємо кошик
       setClothingCart((prev) => {
         const existing = prev.find((cartItem) => cartItem.item.id === item.id);
         if (existing) {
@@ -124,7 +125,7 @@ export const ClothingRental = () => {
       setError('');
     } catch (err) {
       console.error('Availability check failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to check availability');
+      setError(err instanceof Error ? err.message : 'Не вдалося перевірити доступність');
     }
   };
 
@@ -154,12 +155,14 @@ export const ClothingRental = () => {
   };
 
   if (loading) {
-  return <ClothingRentalSkeleton />;
-}
+    // Якщо скелетон ще не імпортовано/створено, можна тимчасово: return <LoadingSpinner />
+    return <ClothingRentalSkeleton />;
+  }
 
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Кнопка Назад */}
         <button
           onClick={() => navigate('/booking')}
           className="flex items-center text-black hover:text-neutral-600 mb-12 transition-colors group"
@@ -169,6 +172,7 @@ export const ClothingRental = () => {
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+          {/* ЛІВА ЧАСТИНА: Каталог */}
           <div className="lg:col-span-2">
             <div className="mb-16">
               <h1 className="text-5xl font-light text-black mb-3 tracking-tight">Оренда одягу</h1>
@@ -181,6 +185,7 @@ export const ClothingRental = () => {
               </div>
             )}
 
+            {/* Фільтри та Пошук */}
             <div className="mb-12">
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
                 <div className="flex-1 relative">
@@ -207,6 +212,7 @@ export const ClothingRental = () => {
                 </select>
               </div>
 
+              {/* Сітка товарів */}
               {filteredItems.length === 0 ? (
                 <div className="text-center py-24">
                   <Shirt className="w-16 h-16 text-neutral-200 mx-auto mb-4" />
@@ -216,42 +222,50 @@ export const ClothingRental = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                   {filteredItems.map((item) => {
                     const quantity = getItemQuantity(item.id);
+                    // 🚀 ТУТ КЛЮЧОВА ЗМІНА: Вибираємо мініатюру, якщо є, інакше оригінал
+                    const displayImage = item.primaryImage?.thumbnailUrl || item.primaryImage?.imageUrl;
+
                     return (
-                      <div
-                        key={item.id}
-                        className="group"
-                      >
-                        <div className="relative aspect-[3/4] bg-neutral-50 mb-4 overflow-hidden border border-amber-600">
-                          {item.primaryImage?.imageUrl ? (
-                            <img
-                              src={item.primaryImage.imageUrl}
-                              alt={item.primaryImage.altText || item.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      <div key={item.id} className="group flex flex-col h-full">
+                        {/* Зображення */}
+                        <div className="relative mb-4 border border-neutral-200 group-hover:border-amber-600 transition-colors">
+                          {displayImage ? (
+                            <OptimizedImage
+                              src={displayImage}
+                              alt={item.primaryImage?.altText || item.name}
+                              aspectRatio="aspect-[3/4]"
+                              className="w-full group-hover:scale-[1.02] transition-transform duration-500"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center">
+                            <div className="aspect-[3/4] bg-neutral-50 flex items-center justify-center">
                               <Shirt className="w-12 h-12 text-neutral-300" />
                             </div>
                           )}
-                          <div className="absolute top-4 right-4 bg-white border border-amber-600 px-4 py-2">
+
+                          {/* Бейдж ціни */}
+                          <div className="absolute top-4 right-4 bg-white border border-neutral-200 px-4 py-2 z-10 shadow-sm">
                             <span className="text-sm font-light text-black tracking-wider">
                               {formatCurrency(item.price)}
                             </span>
                           </div>
                         </div>
 
-                        <div className="space-y-3">
+                        {/* Інфо про товар */}
+                        <div className="space-y-3 flex-1">
                           <h3 className="font-light text-black text-lg tracking-wide">{item.name}</h3>
-                          <p className="text-sm text-neutral-500 font-light line-clamp-2">
+                          <p className="text-sm text-neutral-500 font-light line-clamp-2 min-h-[40px]">
                             {item.description}
                           </p>
                           <div className="flex items-center justify-between text-xs text-neutral-400 font-light tracking-wider uppercase">
                             <span>Розмір: {item.size}</span>
                             <span>Доступно: {item.quantity}</span>
                           </div>
+                        </div>
 
+                        {/* Кнопки додавання */}
+                        <div className="mt-4">
                           {quantity > 0 ? (
-                            <div className="flex items-center justify-between border border-neutral-200 p-3">
+                            <div className="flex items-center justify-between border border-neutral-200 p-2">
                               <button
                                 onClick={() => removeFromCart(item.id)}
                                 className="w-10 h-10 flex items-center justify-center hover:bg-neutral-50 transition-colors"
@@ -283,8 +297,9 @@ export const ClothingRental = () => {
             </div>
           </div>
 
+          {/* ПРАВА ЧАСТИНА: Кошик (Sticky) */}
           <div className="lg:col-span-1">
-            <div className="border border-amber-600 p-8 sticky top-8 bg-white">
+            <div className="border border-amber-600 p-8 sticky top-8 bg-white shadow-sm">
               <div className="flex items-center justify-between mb-8 pb-6 border-b border-neutral-200">
                 <h2 className="text-2xl font-light text-black tracking-wide">Кошик</h2>
                 <ShoppingCart className="w-6 h-6 text-black" />
@@ -298,7 +313,7 @@ export const ClothingRental = () => {
               ) : (
                 <div className="space-y-6 mb-8">
                   {clothingCart.map((cartItem) => (
-                    <div key={cartItem.item.id} className="pb-6 border-b border-neutral-100">
+                    <div key={cartItem.item.id} className="pb-6 border-b border-neutral-100 last:border-0">
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex-1">
                           <h3 className="font-light text-black mb-1">{cartItem.item.name}</h3>
@@ -306,14 +321,14 @@ export const ClothingRental = () => {
                         </div>
                         <button
                           onClick={() => removeFromCart(cartItem.item.id)}
-                          className="text-neutral-400 hover:text-black text-xs uppercase tracking-wider transition-colors"
+                          className="text-neutral-400 hover:text-black text-xs uppercase tracking-wider transition-colors ml-4"
                         >
                           Видалити
                         </button>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-neutral-400 font-light">
-                          К-сть: {cartItem.quantity} × {formatCurrency(cartItem.item.price)}
+                          {cartItem.quantity} шт × {formatCurrency(cartItem.item.price)}
                         </span>
                         <span className="font-light text-black">
                           {formatCurrency(parseFloat(cartItem.item.price) * cartItem.quantity)}
@@ -333,22 +348,24 @@ export const ClothingRental = () => {
                 </div>
               )}
 
-              <button
-                onClick={handleContinue}
-                className="w-full py-4 bg-black text-white font-light tracking-wider hover:bg-neutral-800 transition-colors mb-3 text-sm uppercase"
-              >
-                Продовжити до оформлення
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleContinue}
+                  className="w-full py-4 bg-black text-white font-light tracking-wider hover:bg-neutral-800 transition-colors text-sm uppercase"
+                >
+                  Продовжити
+                </button>
 
-              <button
-                onClick={() => {
-                  setClothingCart([]);
-                  navigate('/summary');
-                }}
-                className="w-full py-4 border border-neutral-200 text-black hover:bg-neutral-50 transition-colors font-light tracking-wider text-sm uppercase"
-              >
-                Пропустити оренду одягу
-              </button>
+                <button
+                  onClick={() => {
+                    setClothingCart([]);
+                    navigate('/summary');
+                  }}
+                  className="w-full py-4 border border-neutral-200 text-black hover:bg-neutral-50 transition-colors font-light tracking-wider text-sm uppercase"
+                >
+                  Пропустити оренду
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -7,13 +7,20 @@ class StudioImageInline(admin.TabularInline):
     model = StudioImage
     extra = 1
 
-    fields = ['image', 'caption', 'order', 'preview_image']
-    readonly_fields = ['preview_image']
+    # Додаємо image_thumbnail, щоб бачити, чи створилась мініатюра
+    fields = ['image', 'image_thumbnail', 'caption', 'order', 'preview_image']
+    readonly_fields = ['image_thumbnail', 'preview_image']
 
     def preview_image(self, obj):
-        if obj.image:
+        # Використовуємо мініатюру для прев'ю, якщо вона є
+        if obj.image_thumbnail:
             return format_html(
-                '<img src="{}" style="max-width: 100px; max-height: 100px;" />',
+                '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: cover;" />',
+                obj.image_thumbnail.url
+            )
+        elif obj.image:
+            return format_html(
+                '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: cover;" />',
                 obj.image.url
             )
         return "No image"
@@ -48,26 +55,34 @@ class LocationAdmin(admin.ModelAdmin):
             'description': 'Enter amenities as comma-separated values (e.g., "Natural Light, Backdrop System, Props")'
         }),
         ('Main Image', {
-            'fields': ('image', 'preview_image')
+            # Додаємо image_thumbnail сюди
+            'fields': ('image', 'image_thumbnail', 'preview_image')
         }),
         ('Status', {
             'fields': ('is_active',)
         }),
     )
 
-    readonly_fields = ['preview_image', 'created_at', 'updated_at']
+    # image_thumbnail має бути read-only, бо генерується скриптом
+    readonly_fields = ['image_thumbnail', 'preview_image', 'created_at', 'updated_at']
     inlines = [StudioImageInline]
 
     def preview_image(self, obj):
         """Display main image preview in admin"""
-        if obj.image:
+        # Пріоритет на мініатюру для швидкодії адмінки
+        if obj.image_thumbnail:
             return format_html(
                 '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
-                obj.image
+                obj.image_thumbnail.url
+            )
+        elif obj.image:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
+                obj.image.url
             )
         return "No image"
 
-    preview_image.short_description = 'Main Image'
+    preview_image.short_description = 'Preview'
 
     def get_queryset(self, request):
         """Optimize queries with prefetch"""
@@ -144,14 +159,19 @@ class StudioImageAdmin(admin.ModelAdmin):
             'fields': ('location',)
         }),
         ('Image', {
-            'fields': ('image', 'preview_image', 'caption', 'order')
+            'fields': ('image', 'image_thumbnail', 'preview_image', 'caption', 'order')
         }),
     )
 
-    readonly_fields = ['preview_image', 'created_at']
+    readonly_fields = ['image_thumbnail', 'preview_image', 'created_at']
 
     def preview_image(self, obj):
-        if obj.image:
+        if obj.image_thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
+                obj.image_thumbnail.url
+            )
+        elif obj.image:
             return format_html(
                 '<img src="{}" style="max-width: 200px; max-height: 200px; object-fit: cover;" />',
                 obj.image.url

@@ -50,9 +50,9 @@ export interface ClothingItem {
 
 export interface ClothingImage {
   id: string;
-  image: string;
   imageUrl: string;
-  altText: string;
+  thumbnailUrl?: string; // <-- Додати це
+  altText?: string;
   order: number;
 }
 
