@@ -5,6 +5,7 @@ import { locationService } from '../services/api';
 import { useBooking } from '../context/BookingContext';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { Header } from '../components/Header';
+import { HomeSkeleton } from '../components/Skeleton';
 import type { Location } from '../types/index';
 import { formatCurrency } from '../utils/dateTime';
 
