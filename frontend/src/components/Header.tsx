@@ -7,6 +7,15 @@ export const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const navItems = [
+    { label: 'Про нас', id: 'about' },
+    { label: 'Можливості', id: 'amenities' },
+    { label: 'Галерея', id: 'gallery' },
+    { label: 'Акції', id: 'offers' },
+    { label: 'Правила', id: 'rules' },
+    { label: 'Заборонено', id: 'prohibitions' }
+  ];
+
   const scrollToSection = (sectionId: string) => {
 
     if (location.pathname !== '/') {
@@ -54,11 +63,7 @@ export const Header = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-12">
-            {[
-              { label: 'Про нас', id: 'about' },
-              { label: 'Можливості', id: 'amenities' },
-              { label: 'Галерея', id: 'gallery' }
-            ].map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => scrollToSection(item.id)}
@@ -90,19 +95,15 @@ export const Header = () => {
         {isMenuOpen && (
           <nav className="md:hidden py-6 border-t border-neutral-200">
             <div className="flex flex-col space-y-4">
-              {[
-                { label: 'Про нас', id: 'about' },
-                { label: 'Можливості', id: 'amenities' },
-                { label: 'Галерея', id: 'gallery' }
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => scrollToSection(item.id)}
-                  className="text-left text-black font-light tracking-wider uppercase text-sm py-2 hover:translate-x-2 transition-transform"
-                >
-                  {item.label}
-                </button>
-              ))}
+              {navItems.map((item) => (
+                 <button
+                   key={item.id}
+                   onClick={() => scrollToSection(item.id)}
+                   className="text-left text-black font-light tracking-wider uppercase text-sm py-2 hover:translate-x-2 transition-transform"
+                 >
+                   {item.label}
+                 </button>
+               ))}
               <button
                 onClick={handleBookingClick}
                 className="w-full py-4 bg-black text-white font-light tracking-wider hover:bg-neutral-800 transition-colors text-sm uppercase mt-4"
