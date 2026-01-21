@@ -1,4 +1,4 @@
-# backend/studios/management/commands/optimize_existing_images.py
+# backend/studios/management/commands/optimize_clothing_images.py
 from django.core.management.base import BaseCommand
 from studios.models import Location, StudioImage
 
