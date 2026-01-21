@@ -197,7 +197,7 @@ export const Home = () => {
         </div>
       </div>
 
-      {/* About Section */}
+{/* About Section */}
       <div id="about" className="max-w-7xl mx-auto px-6 py-20 sm:py-32">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-start">
           <div>
@@ -209,9 +209,23 @@ export const Home = () => {
             <h3 className="text-3xl sm:text-5xl font-light text-black mb-8 leading-tight tracking-tight">
               Місце, де народжуються ідеї
             </h3>
-            <p className="text-lg text-neutral-500 leading-relaxed mb-12 font-light">
+            <p className="text-lg text-neutral-500 leading-relaxed mb-10 font-light">
               {mainLocation.description}
             </p>
+
+            {/* 👇 АДРЕСА З ПОСИЛАННЯМ НА GOOGLE MAPS 👇 */}
+            <div className="flex items-center text-neutral-500 group/map w-fit">
+              <MapPin className="w-5 h-5 mr-3 group-hover/map:text-black transition-colors duration-300" />
+              <a
+                href="https://www.google.com/maps/place/%D0%A4%D0%BE%D1%82%D0%BE%D1%81%D1%82%D1%83%D0%B4%D1%96%D1%8F+Magic+Story/@49.8559931,24.0299061,17z/data=!3m1!4b1!4m6!3m5!1s0x473add2cb65fe113:0x8270b0263934d46b!8m2!3d49.8559932!4d24.034777!16s%2Fg%2F11pwjgl7vw?entry=ttu&g_ep=EgoyMDI2MDExMy4wIKXMDSoASAFQAw%3D%3D"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-lg font-light border-b border-transparent group-hover/map:border-black group-hover/map:text-black transition-all duration-300"
+              >
+                Zhovkivska 14, Lviv, Ukraine
+              </a>
+            </div>
+            {/* 👆 КІНЕЦЬ БЛОКУ АДРЕСИ 👆 */}
           </div>
 
           <div id="amenities">
@@ -236,6 +250,7 @@ export const Home = () => {
           </div>
         </div>
       </div>
+
 
       {/* Locations Section */}
       <div id="locations" className="bg-neutral-50 py-20 sm:py-32">
