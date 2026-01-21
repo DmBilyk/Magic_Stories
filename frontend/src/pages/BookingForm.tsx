@@ -111,6 +111,22 @@ export const BookingForm = () => {
     return selectedLocation.id === LOCATION_1_UUID ? 1 : 0.5;
   }, [selectedLocation]);
 
+  // 🛠️ FIX: Перевірка та очищення застарілої дати/часу при завантаженні
+  useEffect(() => {
+    const today = getTodayDate();
+
+    // 1. Якщо дата в минулому -> очищаємо дату і час
+    if (bookingDate && bookingDate < today) {
+      setBookingDate('');
+      setBookingTime('');
+    }
+    // 2. Якщо дата сьогоднішня, але час вже минув -> очищаємо тільки час
+    else if (bookingDate === today && bookingTime && isTimeSlotInPast(bookingDate, bookingTime)) {
+      setBookingTime('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Виконується лише 1 раз при монтуванні компонента
+
   useEffect(() => {
     if (!selectedLocation) {
       navigate('/');
@@ -122,7 +138,11 @@ export const BookingForm = () => {
   // 🚀 Оптимізована перевірка availability з debounce і кешем
   useEffect(() => {
     if (debouncedDate && selectedLocation && settings && debouncedDuration > 0) {
-      checkAvailability();
+      // Якщо дата валідна (не в минулому), перевіряємо слоти
+      const today = getTodayDate();
+      if (debouncedDate >= today) {
+        checkAvailability();
+      }
     }
   }, [debouncedDate, debouncedDuration, selectedLocation, settings]);
 
@@ -234,7 +254,8 @@ export const BookingForm = () => {
         setBookingTime('');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to check availability');
+      // Якщо помилка 404 або інша - очищаємо слоти, але не ламаємо інтерфейс
+      console.warn("Availability check failed (possibly past date):", err);
       setAvailableSlots([]);
     } finally {
       setCheckingSlots(false);

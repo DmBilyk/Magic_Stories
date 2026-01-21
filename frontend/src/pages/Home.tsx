@@ -9,20 +9,19 @@ import { HomeSkeleton } from '../components/Skeleton';
 import type { Location } from '../types/index';
 import { formatCurrency } from '../utils/dateTime';
 
-// Local helper types for backend-added fields (don't modify global types here)
+// Types helpers
 type GalleryImage = { imageUrl?: string; thumbnailUrl?: string };
-
 const getThumbnail = (loc: Location) => ((loc as any).thumbnailUrl as string | undefined) || loc.imageUrl;
 const getGalleryImages = (loc: Location) => (loc as any).galleryImages as GalleryImage[] | undefined;
 
-// 🎯 Компонент оптимізованого зображення
+// 🎯 Компонент OptimizedImage (Оновлений для кращого контролю розмірів)
 interface OptimizedImageProps {
   src: string;
-  thumbnail?: string; // low-res image from backend
+  thumbnail?: string;
   alt: string;
-  className?: string;
+  className?: string; // Класи для самого тегу <img>
   priority?: boolean;
-  aspectRatio?: string;
+  aspectRatio?: string; // Класи для контейнера-обгортки (div)
 }
 
 const OptimizedImage = ({
@@ -57,20 +56,20 @@ const OptimizedImage = ({
   }, [priority]);
 
   return (
-    <div ref={imgRef} className={`relative ${aspectRatio || ''}`}>
-      {/* Low-res blurred placeholder (if thumbnail provided) */}
+    <div ref={imgRef} className={`relative overflow-hidden bg-neutral-100 ${aspectRatio || ''}`}>
+      {/* Low-res blurred placeholder */}
       {thumbnail && (
         <img
           src={thumbnail}
           alt={alt}
-          className={`${className} absolute inset-0 w-full h-full object-cover filter blur-sm scale-105 transition-opacity duration-300 ${loaded ? 'opacity-0' : 'opacity-100'}`}
-          aria-hidden
+          className={`${className} absolute inset-0 w-full h-full object-cover filter blur-md scale-110 transition-opacity duration-500 ${loaded ? 'opacity-0' : 'opacity-100'}`}
+          aria-hidden="true"
         />
       )}
 
-      {/* Blur placeholder while nothing is loaded */}
+      {/* Placeholder if no thumbnail */}
       {!loaded && !thumbnail && (
-        <div className="absolute inset-0 bg-neutral-100 animate-pulse" />
+        <div className="absolute inset-0 bg-neutral-200 animate-pulse" />
       )}
 
       {isInView && (
@@ -80,7 +79,7 @@ const OptimizedImage = ({
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           onLoad={() => setLoaded(true)}
-          className={`${className} ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
+          className={`${className} relative z-10 transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
     </div>
@@ -105,7 +104,6 @@ export const Home = () => {
       const data = await locationService.getAll();
       const activeLocations = data.filter((loc) => loc.isActive);
 
-      // 🚀 Preload hero low-res thumbnail (if available) otherwise high-res
       if (activeLocations[0]) {
         const heroThumb = getThumbnail(activeLocations[0]);
         if (heroThumb) {
@@ -129,7 +127,6 @@ export const Home = () => {
     navigate('/booking');
   };
 
-  // Показуємо skeleton поки завантажується або поки Hero зображення не готове
   if (loading || (!heroImageLoaded && locations.length > 0)) {
     return <HomeSkeleton />;
   }
@@ -143,8 +140,6 @@ export const Home = () => {
   }
 
   const mainLocation = locations[0];
-
-  // 🎯 Оптимізована галерея - БЕЗ дубліката Hero зображення
   const gallery = getGalleryImages(mainLocation)?.map((img) => img.imageUrl || '')?.filter(Boolean) || [];
 
   return (
@@ -152,13 +147,16 @@ export const Home = () => {
       <Header />
 
       {/* Hero Section */}
-      <div className="relative h-screen w-full">
+      {/* 🛠️ FIX 1: Додано overflow-hidden, щоб нічого не вилізало */}
+      <div className="relative h-screen w-full overflow-hidden">
         <div className="absolute inset-0">
           {mainLocation.imageUrl ? (
             <OptimizedImage
               src={mainLocation.imageUrl}
               thumbnail={mainLocation.thumbnailUrl}
               alt={mainLocation.name}
+              // 🛠️ FIX 1: Додано h-full w-full для контейнера
+              aspectRatio="h-full w-full"
               className="w-full h-full object-cover"
               priority={true}
             />
@@ -167,28 +165,29 @@ export const Home = () => {
               <span className="text-neutral-400 font-light">No Image Available</span>
             </div>
           )}
-          <div className="absolute inset-0 bg-black/40" />
+          {/* 🛠️ FIX 1: Фільтр тепер точно поверх картинки */}
+          <div className="absolute inset-0 bg-black/40 z-10 pointer-events-none" />
         </div>
 
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center px-6 max-w-4xl">
-            <div className="inline-block border border-white/30 px-6 py-2 mb-12">
+        <div className="absolute inset-0 flex items-center justify-center z-20">
+          <div className="text-center px-6 max-w-4xl mx-auto">
+            <div className="inline-block border border-white/30 px-6 py-2 mb-8 sm:mb-12 backdrop-blur-sm">
               <span className="text-white font-light tracking-[0.3em] uppercase text-xs">
                 Преміум простір
               </span>
             </div>
 
-            <h1 className="text-5xl sm:text-6xl md:text-7xl font-light text-white mb-8 tracking-tight">
+            <h1 className="text-4xl sm:text-6xl md:text-7xl font-light text-white mb-6 sm:mb-8 tracking-tight drop-shadow-lg">
               {mainLocation.name}
             </h1>
-            <p className="text-lg sm:text-xl text-white/90 mb-16 font-light leading-relaxed">
+            <p className="text-base sm:text-xl text-white/90 mb-10 sm:mb-16 font-light leading-relaxed max-w-2xl mx-auto drop-shadow-md">
               {mainLocation.description}
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
               <button
                 onClick={() => handleBookLocation(mainLocation)}
-                className="w-full sm:w-auto bg-white text-black px-12 py-4 font-light tracking-wider hover:bg-neutral-100 transition-colors text-sm uppercase flex items-center justify-center group"
+                className="w-full sm:w-auto bg-white text-black px-12 py-4 font-light tracking-wider hover:bg-neutral-100 transition-colors text-sm uppercase flex items-center justify-center group shadow-lg"
               >
                 <span>Забронювати цю залу</span>
                 <ChevronRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -199,15 +198,15 @@ export const Home = () => {
       </div>
 
       {/* About Section */}
-      <div id="about" className="max-w-7xl mx-auto px-6 py-32">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-24 items-start">
+      <div id="about" className="max-w-7xl mx-auto px-6 py-20 sm:py-32">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-start">
           <div>
             <div className="inline-block border-b border-neutral-200 pb-2 mb-8">
               <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
                 Про простір
               </h2>
             </div>
-            <h3 className="text-4xl sm:text-5xl font-light text-black mb-8 leading-tight tracking-tight">
+            <h3 className="text-3xl sm:text-5xl font-light text-black mb-8 leading-tight tracking-tight">
               Місце, де народжуються ідеї
             </h3>
             <p className="text-lg text-neutral-500 leading-relaxed mb-12 font-light">
@@ -215,7 +214,6 @@ export const Home = () => {
             </p>
           </div>
 
-          {/* Amenities */}
           <div id="amenities">
             <div className="inline-block border-b border-neutral-200 pb-2 mb-12">
               <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
@@ -239,18 +237,17 @@ export const Home = () => {
         </div>
       </div>
 
-      {/* Locations Section - З LAZY LOADING */}
-      <div id="locations" className="bg-neutral-50 py-32">
+      {/* Locations Section */}
+      <div id="locations" className="bg-neutral-50 py-20 sm:py-32">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl font-light text-black mb-6 tracking-tight">Наші Локації</h2>
+          <div className="text-center mb-16 sm:mb-20">
+            <h2 className="text-3xl sm:text-4xl font-light text-black mb-6 tracking-tight">Наші Локації</h2>
             <p className="text-neutral-500 font-light">Оберіть простір, який найкраще підходить для вашої ідеї</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12">
             {locations.map((location: Location) => (
-              <div key={location.id} className="group bg-white border border-neutral-200 hover:border-black transition-colors duration-300">
-                {/* Image with Lazy Loading */}
+              <div key={location.id} className="group bg-white border border-neutral-200 hover:border-black transition-colors duration-300 flex flex-col h-full">
                 <div className="aspect-[16/10] overflow-hidden relative">
                   {location.imageUrl ? (
                     <OptimizedImage
@@ -258,14 +255,13 @@ export const Home = () => {
                       thumbnail={getThumbnail(location)}
                       alt={location.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                      aspectRatio="aspect-[16/10]"
+                      aspectRatio="h-full w-full"
                     />
                   ) : (
                     <div className="w-full h-full bg-neutral-100 flex items-center justify-center">
                       <MapPin className="w-12 h-12 text-neutral-300" />
                     </div>
                   )}
-                  {/* Badge: Price */}
                   <div className="absolute top-6 right-6 bg-white px-4 py-2">
                     <span className="text-sm font-light text-black tracking-wider">
                       {formatCurrency(location.hourlyRate)} / год
@@ -273,14 +269,13 @@ export const Home = () => {
                   </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-10">
+                <div className="p-8 sm:p-10 flex flex-col flex-1">
                   <h3 className="text-2xl font-light text-black mb-4">{location.name}</h3>
-                  <p className="text-neutral-500 font-light mb-8 line-clamp-2 h-12">
+                  <p className="text-neutral-500 font-light mb-8 line-clamp-2">
                     {location.description}
                   </p>
 
-                  <div className="flex items-center justify-between border-t border-neutral-100 pt-8">
+                  <div className="mt-auto flex items-center justify-between border-t border-neutral-100 pt-8">
                     <div className="flex items-center text-neutral-400">
                       <Users className="w-4 h-4 mr-2" />
                       <span className="text-xs uppercase tracking-wider">до {location.capacity} осіб</span>
@@ -301,9 +296,9 @@ export const Home = () => {
         </div>
       </div>
 
-      {/* Gallery Section - ТІЛЬКИ якщо є додаткові зображення */}
+      {/* Gallery Section */}
       {gallery.length > 0 && (
-        <div id="gallery" className="bg-white py-32">
+        <div id="gallery" className="bg-white py-20 sm:py-32">
           <div className="max-w-7xl mx-auto px-6">
             <div className="mb-16">
               <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
@@ -314,7 +309,7 @@ export const Home = () => {
               <h3 className="text-3xl font-light text-black tracking-tight">Інтер'єр основної зали</h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 auto-rows-[300px]">
               {gallery.map((imgUrl: string, index: number) => (
                 <div
                   key={index}
@@ -327,7 +322,9 @@ export const Home = () => {
                     thumbnail={getGalleryImages(mainLocation)?.[index]?.thumbnailUrl}
                     alt={`Studio view ${index + 1}`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                    aspectRatio={index === 0 ? 'aspect-[4/3]' : 'aspect-square'}
+                    // 🛠️ FIX 2: Використовуємо h-full w-full замість aspect-ratio,
+                    // щоб заповнити всю комірку сітки (grid cell) без обрізання знизу.
+                    aspectRatio="h-full w-full"
                   />
                 </div>
               ))}
@@ -336,8 +333,8 @@ export const Home = () => {
         </div>
       )}
 
-      {/* Details Section - З LAZY LOADING */}
-      <div id="details" className="max-w-7xl mx-auto px-6 py-32">
+      {/* Details Section */}
+      <div id="details" className="max-w-7xl mx-auto px-6 py-20 sm:py-32">
         <div className="mb-16">
           <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
             <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
@@ -366,6 +363,32 @@ export const Home = () => {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
             aspectRatio="aspect-[9/16]"
           />
+        </div>
+      </div>
+
+      {/* Equipment Section */}
+      <div id="equipment" className="max-w-7xl mx-auto px-6 py-20 sm:py-32">
+        <div className="mb-16">
+          <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
+            <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
+              ОБЛАДНАННЯ
+            </h2>
+          </div>
+          <h3 className="text-3xl font-light text-black tracking-tight">Технічне забезпечення</h3>
+        </div>
+
+        {/* Сітка: 2 колонки на мобільних, 4 на десктопі (в один ряд) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {[1, 2, 3, 4].map((num) => (
+            <div key={num} className="relative overflow-hidden group cursor-pointer border border-neutral-200">
+              <OptimizedImage
+                src={`/assets/equipment/equipment_${num}.jpg`} // ⚠️ Перевірте розширення файлів (jpg/JPG/png)
+                alt={`Студійне обладнання ${num}`}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                aspectRatio="aspect-[9/16]"
+              />
+            </div>
+          ))}
         </div>
       </div>
 

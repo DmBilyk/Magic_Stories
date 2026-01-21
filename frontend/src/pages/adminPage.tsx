@@ -12,7 +12,9 @@ const API_BASE = '/api';
 interface Location {
   id: string;
   name: string;
-  hourly_rate: number | string;
+  // 🛠️ FIX: Підтримка обох форматів (CamelCase для списку, SnakeCase для бронювань)
+  hourly_rate?: number | string;
+  hourlyRate?: number | string;
 }
 
 interface Service {
@@ -68,8 +70,8 @@ const formatDate = (date: string) => {
 
 const formatTime = (time: string) => time ? time.slice(0, 5) : '';
 
-const formatCurrency = (amount: number | string) => {
-  const num = parseFloat(String(amount));
+const formatCurrency = (amount: number | string | undefined) => {
+  const num = parseFloat(String(amount || 0));
   return isNaN(num) ? '0 ₴' : `${Math.round(num)} ₴`;
 };
 
@@ -79,6 +81,12 @@ const addDays = (date: string, days: number) => {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result.toISOString().split('T')[0];
+};
+
+// 🛠️ FIX: Helper to safely get hourly rate regardless of casing
+const getHourlyRate = (loc?: Location): number => {
+  if (!loc) return 0;
+  return parseFloat(String(loc.hourlyRate || loc.hourly_rate || 0));
 };
 
 // API Helper
@@ -343,8 +351,9 @@ const BookingCard: React.FC<{ booking: Booking; onStatusChange: (id: string, s: 
             <h4 className="font-semibold mb-3">Деталі оплати</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
+                {/* 🛠️ FIX: Використовуємо універсальний getter ціни */}
                 <span>Оренда ({booking.duration_hours} год):</span>
-                <span>{formatCurrency(parseFloat(String(booking.location.hourly_rate)) * booking.duration_hours)}</span>
+                <span>{formatCurrency(getHourlyRate(booking.location) * booking.duration_hours)}</span>
               </div>
               {booking.additional_services.map(s => (
                 <div key={s.id} className="flex justify-between text-slate-600">
@@ -512,7 +521,8 @@ const CreateBookingModal: React.FC<{
     const loc = locations.find(l => l.id === formData.locationId);
     if (!loc) return 0;
 
-    const hourlyRate = parseFloat(String(loc.hourly_rate)) || 0;
+    // 🛠️ FIX: Використовуємо універсальний getter
+    const hourlyRate = getHourlyRate(loc);
     const base = hourlyRate * formData.durationHours;
 
     const serv = services
@@ -591,8 +601,9 @@ const CreateBookingModal: React.FC<{
                 >
                   <option value="">Оберіть...</option>
                   {locations.map(l => (
+                    // 🛠️ FIX: Виводимо ціну через getHourlyRate
                     <option key={l.id} value={l.id}>
-                      {l.name} ({formatCurrency(l.hourly_rate)}/год)
+                      {l.name} ({formatCurrency(getHourlyRate(l))}/год)
                     </option>
                   ))}
                 </select>
@@ -795,25 +806,23 @@ const CreateBookingModal: React.FC<{
             </>
           )}
 
-          {/* STEP 4: Фінальний розрахунок - ✅ ВИПРАВЛЕНО */}
+          {/* STEP 4: Фінальний розрахунок */}
           {step === 4 && (
             <>
               <div className="p-6 bg-white rounded-lg border">
                 <h3 className="font-semibold mb-4">Фінальний розрахунок</h3>
 
-                {/* ✅ ВИПРАВЛЕНО: Оренда з parseFloat */}
                 <div className="flex justify-between mb-2">
                   <span>Оренда ({formData.durationHours} год):</span>
                   <span>{formatCurrency(
                     (() => {
                       const selectedLoc = locations.find(l => l.id === formData.locationId);
-                      const hourlyRate = selectedLoc ? (parseFloat(String(selectedLoc.hourly_rate)) || 0) : 0;
-                      return hourlyRate * formData.durationHours;
+                      // 🛠️ FIX: Використовуємо універсальний getter
+                      return getHourlyRate(selectedLoc) * formData.durationHours;
                     })()
                   )}</span>
                 </div>
 
-                {/* ✅ ВИПРАВЛЕНО: Послуги з parseFloat */}
                 {formData.additionalServiceIds.length > 0 && (
                   <div className="flex justify-between mb-2 text-sm text-gray-600">
                     <span>Послуги:</span>
@@ -825,7 +834,6 @@ const CreateBookingModal: React.FC<{
                   </div>
                 )}
 
-                {/* ✅ ВИПРАВЛЕНО: Одяг з parseFloat */}
                 {clothingCart.length > 0 && (
                   <div className="flex justify-between mb-2 text-sm text-gray-600">
                     <span>Оренда одягу ({clothingCart.reduce((a,c)=>a+c.quantity,0)} шт):</span>
