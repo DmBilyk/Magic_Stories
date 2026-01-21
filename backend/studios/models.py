@@ -2,10 +2,45 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 import uuid
+from PIL import Image
+from io import BytesIO
+from django.core.files.uploadedfile import InMemoryUploadedFile
+import sys
+
+
+def optimize_image(image_field, max_width=1920, quality=85):
+    """
+    Оптимізує зображення: зменшує розмір та якість
+    """
+    img = Image.open(image_field)
+
+    # Конвертуємо RGBA в RGB (для JPEG)
+    if img.mode in ('RGBA', 'LA', 'P'):
+        background = Image.new('RGB', img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+        img = background
+
+    # Зменшуємо розмір якщо потрібно
+    if img.width > max_width:
+        ratio = max_width / img.width
+        new_height = int(img.height * ratio)
+        img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+    # Зберігаємо оптимізоване зображення
+    output = BytesIO()
+    img.save(output, format='JPEG', quality=quality, optimize=True)
+    output.seek(0)
+
+    return InMemoryUploadedFile(
+        output, 'ImageField',
+        f"{image_field.name.split('.')[0]}.jpg",
+        'image/jpeg',
+        sys.getsizeof(output), None
+    )
 
 
 class Location(models.Model):
-    """Photo studios location model"""
+    """Photo studio location model"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="Studio Name")
     description = models.TextField(verbose_name="Description")
@@ -20,6 +55,13 @@ class Location(models.Model):
         null=True,
         blank=True,
         verbose_name="Main Image"
+    )
+    # Додаємо поле для мініатюри
+    image_thumbnail = models.ImageField(
+        upload_to='locations/thumbnails/',
+        null=True,
+        blank=True,
+        verbose_name="Thumbnail"
     )
     address = models.TextField(blank=True, verbose_name="Address")
     capacity = models.PositiveIntegerField(
@@ -44,6 +86,18 @@ class Location(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        """Оптимізуємо зображення перед збереженням"""
+        if self.image:
+            # Оптимізуємо основне зображення
+            self.image = optimize_image(self.image, max_width=1920, quality=85)
+
+            # Створюємо мініатюру
+            thumbnail = optimize_image(self.image, max_width=600, quality=80)
+            self.image_thumbnail = thumbnail
+
+        super().save(*args, **kwargs)
+
     def get_amenities_list(self):
         """Return amenities as a list"""
         if self.amenities:
@@ -52,7 +106,7 @@ class Location(models.Model):
 
 
 class AdditionalService(models.Model):
-    """Additional services offered for studios sessions"""
+    """Additional services offered for studio sessions"""
     SERVICE_TYPES = [
         ('clothing', 'Professional Clothing Rental'),
         ('makeup', 'Makeup Services'),
@@ -96,7 +150,7 @@ class AdditionalService(models.Model):
 
 
 class StudioImage(models.Model):
-    """Gallery images for studios locations"""
+    """Gallery images for studio locations"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     location = models.ForeignKey(
         Location,
@@ -107,6 +161,13 @@ class StudioImage(models.Model):
     image = models.ImageField(
         upload_to='studio_gallery/',
         verbose_name="Image"
+    )
+    # Додаємо поле для мініатюри галереї
+    image_thumbnail = models.ImageField(
+        upload_to='studio_gallery/thumbnails/',
+        null=True,
+        blank=True,
+        verbose_name="Thumbnail"
     )
     caption = models.CharField(max_length=200, blank=True, verbose_name="Caption")
     order = models.PositiveIntegerField(
@@ -122,3 +183,15 @@ class StudioImage(models.Model):
 
     def __str__(self):
         return f"{self.location.name} - Image {self.order}"
+
+    def save(self, *args, **kwargs):
+        """Оптимізуємо зображення перед збереженням"""
+        if self.image:
+            # Оптимізуємо основне зображення
+            self.image = optimize_image(self.image, max_width=1920, quality=85)
+
+            # Створюємо мініатюру
+            thumbnail = optimize_image(self.image, max_width=600, quality=80)
+            self.image_thumbnail = thumbnail
+
+        super().save(*args, **kwargs)

@@ -5,18 +5,30 @@ from .models import Location, AdditionalService, StudioImage
 class StudioImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudioImage
-        fields = ['id', 'image', 'caption', 'order', 'created_at']
+        fields = ['id', 'image', 'image_thumbnail', 'caption', 'order', 'created_at']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        request = self.context.get('request')
+
+        # Додаємо повні URL для зображень
+        image_url = data.get('image')
+        thumbnail_url = data.get('image_thumbnail')
+
+        if request and image_url:
+            image_url = request.build_absolute_uri(image_url)
+        if request and thumbnail_url:
+            thumbnail_url = request.build_absolute_uri(thumbnail_url)
 
         return {
             'id': str(data['id']),
-            'imageUrl': data.get('image'),
+            'imageUrl': image_url,
+            'thumbnailUrl': thumbnail_url,  # Додаємо мініатюру
             'caption': data.get('caption'),
             'order': data.get('order'),
             'createdAt': data.get('created_at'),
         }
+
 
 class LocationSerializer(serializers.ModelSerializer):
     """Serializer for Location model"""
@@ -31,6 +43,7 @@ class LocationSerializer(serializers.ModelSerializer):
             'description',
             'hourly_rate',
             'image',
+            'image_thumbnail',
             'address',
             'capacity',
             'amenities',
@@ -40,7 +53,7 @@ class LocationSerializer(serializers.ModelSerializer):
             'updated_at',
             'is_active'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'image_thumbnail']
 
     def get_amenities_list(self, obj):
         """Get amenities as a list"""
@@ -49,12 +62,24 @@ class LocationSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         """Convert to camelCase for frontend"""
         data = super().to_representation(instance)
+        request = self.context.get('request')
+
+        # Додаємо повні URL
+        image_url = data.get('image')
+        thumbnail_url = data.get('image_thumbnail')
+
+        if request and image_url:
+            image_url = request.build_absolute_uri(image_url)
+        if request and thumbnail_url:
+            thumbnail_url = request.build_absolute_uri(thumbnail_url)
+
         return {
             'id': str(data['id']),
             'name': data['name'],
             'description': data['description'],
             'hourlyRate': float(data['hourly_rate']),
-            'imageUrl': data['image'],
+            'imageUrl': image_url,
+            'thumbnailUrl': thumbnail_url,  # Додаємо мініатюру
             'address': data['address'],
             'capacity': data['capacity'],
             'amenities': data['amenities_list'],
@@ -156,7 +181,7 @@ class AdditionalServiceCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class StudioImageCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating/updating studios images"""
+    """Serializer for creating/updating studio images"""
     location_id = serializers.UUIDField(write_only=True)
 
     class Meta:
@@ -172,7 +197,7 @@ class StudioImageCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        """Create studios image"""
+        """Create studio image"""
         location_id = validated_data.pop('location_id')
         validated_data['location_id'] = location_id
         return StudioImage.objects.create(**validated_data)

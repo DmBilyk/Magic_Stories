@@ -5,13 +5,19 @@ import { locationService } from '../services/api';
 import { useBooking } from '../context/BookingContext';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { Header } from '../components/Header';
-import type { Location } from '../types';
+import type { Location } from '../types/index';
 import { formatCurrency } from '../utils/dateTime';
-import { HomeSkeleton } from '../components/Skeleton';
+
+// Local helper types for backend-added fields (don't modify global types here)
+type GalleryImage = { imageUrl?: string; thumbnailUrl?: string };
+
+const getThumbnail = (loc: Location) => ((loc as any).thumbnailUrl as string | undefined) || loc.imageUrl;
+const getGalleryImages = (loc: Location) => (loc as any).galleryImages as GalleryImage[] | undefined;
 
 // 🎯 Компонент оптимізованого зображення
 interface OptimizedImageProps {
   src: string;
+  thumbnail?: string; // low-res image from backend
   alt: string;
   className?: string;
   priority?: boolean;
@@ -20,6 +26,7 @@ interface OptimizedImageProps {
 
 const OptimizedImage = ({
   src,
+  thumbnail,
   alt,
   className = '',
   priority = false,
@@ -50,8 +57,18 @@ const OptimizedImage = ({
 
   return (
     <div ref={imgRef} className={`relative ${aspectRatio || ''}`}>
-      {/* Blur placeholder */}
-      {!loaded && (
+      {/* Low-res blurred placeholder (if thumbnail provided) */}
+      {thumbnail && (
+        <img
+          src={thumbnail}
+          alt={alt}
+          className={`${className} absolute inset-0 w-full h-full object-cover filter blur-sm scale-105 transition-opacity duration-300 ${loaded ? 'opacity-0' : 'opacity-100'}`}
+          aria-hidden
+        />
+      )}
+
+      {/* Blur placeholder while nothing is loaded */}
+      {!loaded && !thumbnail && (
         <div className="absolute inset-0 bg-neutral-100 animate-pulse" />
       )}
 
@@ -87,11 +104,14 @@ export const Home = () => {
       const data = await locationService.getAll();
       const activeLocations = data.filter((loc) => loc.isActive);
 
-      // 🚀 Preload hero image
-      if (activeLocations[0]?.imageUrl) {
-        const img = new Image();
-        img.src = activeLocations[0].imageUrl;
-        img.onload = () => setHeroImageLoaded(true);
+      // 🚀 Preload hero low-res thumbnail (if available) otherwise high-res
+      if (activeLocations[0]) {
+        const heroThumb = getThumbnail(activeLocations[0]);
+        if (heroThumb) {
+          const img = new Image();
+          img.src = heroThumb;
+          img.onload = () => setHeroImageLoaded(true);
+        }
       }
 
       setLocations(activeLocations);
@@ -124,7 +144,7 @@ export const Home = () => {
   const mainLocation = locations[0];
 
   // 🎯 Оптимізована галерея - БЕЗ дубліката Hero зображення
-  const gallery = mainLocation.galleryImages?.map(img => img.imageUrl) || [];
+  const gallery = getGalleryImages(mainLocation)?.map((img) => img.imageUrl || '')?.filter(Boolean) || [];
 
   return (
     <div className="min-h-screen bg-white">
@@ -136,6 +156,7 @@ export const Home = () => {
           {mainLocation.imageUrl ? (
             <OptimizedImage
               src={mainLocation.imageUrl}
+              thumbnail={mainLocation.thumbnailUrl}
               alt={mainLocation.name}
               className="w-full h-full object-cover"
               priority={true}
@@ -201,7 +222,7 @@ export const Home = () => {
               </h2>
             </div>
             <div className="space-y-6">
-              {mainLocation.amenities && mainLocation.amenities.map((amenity, index) => (
+              {mainLocation.amenities && mainLocation.amenities.map((amenity: string, index: number) => (
                 <div
                   key={index}
                   className="flex items-center pb-6 border-b border-neutral-100 last:border-0 group"
@@ -226,13 +247,14 @@ export const Home = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            {locations.map((location) => (
+            {locations.map((location: Location) => (
               <div key={location.id} className="group bg-white border border-neutral-200 hover:border-black transition-colors duration-300">
                 {/* Image with Lazy Loading */}
                 <div className="aspect-[16/10] overflow-hidden relative">
                   {location.imageUrl ? (
                     <OptimizedImage
                       src={location.imageUrl}
+                      thumbnail={getThumbnail(location)}
                       alt={location.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       aspectRatio="aspect-[16/10]"
@@ -292,7 +314,7 @@ export const Home = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {gallery.map((imgUrl, index) => (
+              {gallery.map((imgUrl: string, index: number) => (
                 <div
                   key={index}
                   className={`relative overflow-hidden group cursor-pointer border border-neutral-200 hover:border-black transition-colors ${
@@ -300,7 +322,8 @@ export const Home = () => {
                   }`}
                 >
                   <OptimizedImage
-                    src={imgUrl}
+                    src={getGalleryImages(mainLocation)?.[index]?.imageUrl || imgUrl}
+                    thumbnail={getGalleryImages(mainLocation)?.[index]?.thumbnailUrl}
                     alt={`Studio view ${index + 1}`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     aspectRatio={index === 0 ? 'aspect-[4/3]' : 'aspect-square'}
@@ -452,16 +475,16 @@ export const Home = () => {
             Оберіть локацію, яка надихає вас найбільше.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            {locations.map(loc => (
-              <button
-                key={loc.id}
-                onClick={() => handleBookLocation(loc)}
-                className="px-10 py-4 bg-white text-black font-light tracking-wider hover:bg-neutral-200 transition-colors text-sm uppercase"
-              >
-                {loc.name}
-              </button>
-            ))}
-          </div>
+            {locations.map((loc: Location) => (
+               <button
+                 key={loc.id}
+                 onClick={() => handleBookLocation(loc)}
+                 className="px-10 py-4 bg-white text-black font-light tracking-wider hover:bg-neutral-200 transition-colors text-sm uppercase"
+               >
+                 {loc.name}
+               </button>
+             ))}
+           </div>
         </div>
       </div>
     </div>
