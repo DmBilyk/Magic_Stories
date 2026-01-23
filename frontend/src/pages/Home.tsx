@@ -8,7 +8,7 @@ import { Header } from '../components/Header';
 import { HomeSkeleton } from '../components/Skeleton';
 import type { Location } from '../types/index';
 import { formatCurrency } from '../utils/dateTime';
-import { FortuneWheel } from '../components/FortuneWheel';
+import FortuneWheel from '../components/FortuneWheel';
 
 // Types helpers
 type GalleryImage = { imageUrl?: string; thumbnailUrl?: string };
