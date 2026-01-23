@@ -131,7 +131,7 @@ export const bookingService = {
 
   getAllInclusiveRequests: () =>
     fetchAPI<any[]>(`${API_ENDPOINTS.bookings}all-inclusive-requests/`),
-};
+
   getSettings: () => fetchAPI<BookingSettings>(API_ENDPOINTS.bookingSettings),
 };
 
