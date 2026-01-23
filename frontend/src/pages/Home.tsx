@@ -95,7 +95,10 @@ export const Home = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [heroImageLoaded, setHeroImageLoaded] = useState(false);
-  const [showWheel, setShowWheel] = useState(true);
+  const [showWheel, setShowWheel] = useState(() => {
+    const hasSeenWheel = localStorage.getItem('fortuneWheelShown');
+    return !hasSeenWheel;
+  });
   const navigate = useNavigate();
   const { setSelectedLocation } = useBooking();
 
