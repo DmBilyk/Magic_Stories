@@ -118,6 +118,20 @@ export const bookingService = {
       }),
     }),
 
+  createAllInclusiveRequest: (data: any) =>
+    fetchAPI(`${API_ENDPOINTS.bookings}all-inclusive-requests/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        package_type: data.packageType,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        phone_number: data.phoneNumber,
+      }),
+    }),
+
+  getAllInclusiveRequests: () =>
+    fetchAPI<any[]>(`${API_ENDPOINTS.bookings}all-inclusive-requests/`),
+};
   getSettings: () => fetchAPI<BookingSettings>(API_ENDPOINTS.bookingSettings),
 };
 

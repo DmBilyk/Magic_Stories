@@ -8,25 +8,25 @@ const ALL_INCLUSIVE_PACKAGES = [
   {
     id: 'standart',
     name: 'Standart',
-    image: '/assets/all_inclusive_standart.jpg',
+    image: '/assets/all_inclusive/all_inclusive_standart.jpg',
     features: ['2 години оренди студії', 'Базовий реквізит', 'Підтримка адміністратора']
   },
   {
     id: 'family',
     name: 'Family',
-    image: '/assets/all_inclusive_family.jpg',
+    image: '/assets/all_inclusive/all_inclusive_family.jpg',
     features: ['3 години оренди студії', 'Розширений реквізит', 'Сімейні декорації', 'Допомога стиліста']
   },
   {
     id: 'gold',
     name: 'Gold',
-    image: '/assets/all_inclusive_gold.jpg',
+    image: '/assets/all_inclusive/all_inclusive_gold.jpg',
     features: ['4 години оренди студії', 'Преміум реквізит', 'Професійний візаж', 'Зміна образів']
   },
   {
     id: 'premium',
     name: 'Premium',
-    image: '/assets/all_inclusive_premium.jpg',
+    image: '/assets/all_inclusive/all_inclusive_premium.jpg',
     features: ['6 годин оренди студії', 'VIP декорації', 'Повний стиль-супровід', 'Фотограф в подарунок']
   }
 ];
@@ -301,14 +301,13 @@ export const AllInclusive = () => {
               key={pkg.id}
               className="group bg-white border border-neutral-200 hover:border-black transition-all duration-300 flex flex-col"
             >
-              <div className="aspect-[3/4] overflow-hidden relative">
-                <img
-                  src={pkg.image}
-                  alt={pkg.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                />
-              </div>
-
+            <div className="aspect-[9/16] overflow-hidden relative">
+              <img
+                src={pkg.image}
+                alt={pkg.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            </div>
               <div className="p-6 flex flex-col flex-1">
                 <h3 className="text-2xl font-light text-black mb-4">{pkg.name}</h3>
 
