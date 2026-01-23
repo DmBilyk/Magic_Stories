@@ -19,6 +19,9 @@ const segments: WheelSegment[] = [
   { text: 'Солодкий подарунок', color: '#ffffff', textColor: '#000000' },
 ];
 
+const WHEEL_SIZE = 360;
+const POINTER_ANGLE = 270;
+
 interface FortuneWheelProps {
   onClose: () => void;
   onWin?: (prize: string) => void;
@@ -30,6 +33,14 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
   const [prize, setPrize] = useState<string | null>(null);
   const [hasSpun, setHasSpun] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const segmentAngleDegrees = 360 / segments.length;
+  const segmentAngleRadians = (2 * Math.PI) / segments.length;
+
+  const getSegmentIndexFromRotation = (value: number) => {
+    const normalized = ((value % 360) + 360) % 360;
+    const pointerOffset = (POINTER_ANGLE - normalized + 360) % 360;
+    return Math.floor(pointerOffset / segmentAngleDegrees) % segments.length;
+  };
 
   useEffect(() => {
     drawWheel();
@@ -42,51 +53,67 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const size = canvas.width;
-    const cx = size / 2;
-    const cy = size / 2;
-    const radius = size / 2 - 10;
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    if (canvas.width !== WHEEL_SIZE * dpr || canvas.height !== WHEEL_SIZE * dpr) {
+      canvas.width = WHEEL_SIZE * dpr;
+      canvas.height = WHEEL_SIZE * dpr;
+      canvas.style.width = `${WHEEL_SIZE}px`;
+      canvas.style.height = `${WHEEL_SIZE}px`;
+    }
 
-    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
 
-    // Тінь для колеса
-    ctx.shadowColor = "rgba(0, 0, 0, 0.1)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 5;
+    const cx = WHEEL_SIZE / 2;
+    const cy = WHEEL_SIZE / 2;
+    const radius = WHEEL_SIZE / 2 - 18;
+    const highlightedIndex = getSegmentIndexFromRotation(rotation);
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+    ctx.shadowBlur = 25;
+    ctx.shadowOffsetY = 12;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate((rotation * Math.PI) / 180);
 
-    const segmentAngle = (2 * Math.PI) / segments.length;
-
     segments.forEach((segment, i) => {
-      const startAngle = i * segmentAngle;
-      const endAngle = startAngle + segmentAngle;
+      const startAngle = i * segmentAngleRadians;
+      const endAngle = startAngle + segmentAngleRadians;
+      const isHighlighted = highlightedIndex === i;
+      const baseFill = segment.color;
+      const fillStyle = isHighlighted
+        ? baseFill === '#000000'
+          ? '#111111'
+          : '#f8f8f8'
+        : baseFill;
 
-      // Малюємо сектор
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, startAngle, endAngle);
       ctx.closePath();
-      ctx.fillStyle = segment.color;
+      ctx.fillStyle = fillStyle;
       ctx.fill();
+
+      const outlineGradient = ctx.createLinearGradient(-radius, -radius, radius, radius);
+      outlineGradient.addColorStop(0, isHighlighted ? '#bfbfbf' : '#dadada');
+      outlineGradient.addColorStop(1, isHighlighted ? '#7a7a7a' : '#b0b0b0');
+      ctx.strokeStyle = outlineGradient;
+      ctx.lineWidth = isHighlighted ? 3 : 1.2;
       ctx.stroke();
 
-      // Малюємо текст
       ctx.save();
-      ctx.rotate(startAngle + segmentAngle / 2);
-      ctx.translate(radius * 0.65, 0); // Посуваємо текст
+      ctx.rotate(startAngle + segmentAngleRadians / 2);
+      ctx.translate(radius * 0.65, 0);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = segment.textColor;
-      // Шрифт під стиль сайту (Inter, Light)
-      ctx.font = '300 14px Inter, sans-serif';
+      ctx.font = `${isHighlighted ? 400 : 300} 14px "Inter", sans-serif`;
 
-      // Розбиття тексту на рядки, якщо він довгий
       const words = segment.text.split(' ');
-      const maxWidth = radius * 0.5; // Обмеження ширини
+      const maxWidth = radius * 0.5;
       let lines: string[] = [];
       let currentLine = '';
 
@@ -102,7 +129,6 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
       });
       if (currentLine) lines.push(currentLine);
 
-      // Відображення рядків
       lines.forEach((line, index) => {
         const lineHeight = 18;
         const yOffset = (index - (lines.length - 1) / 2) * lineHeight;
@@ -114,23 +140,32 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
 
     ctx.restore();
 
-    // Скидаємо тінь
-    ctx.shadowColor = "transparent";
+    ctx.shadowColor = 'transparent';
 
-    // Центральне коло
     ctx.beginPath();
-    ctx.arc(cx, cy, 30, 0, 2 * Math.PI);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
+    ctx.arc(cx, cy, radius + 10, 0, 2 * Math.PI);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#111111';
     ctx.stroke();
 
-    // Декоративна точка в центрі
+    const centerGradient = ctx.createRadialGradient(cx, cy, 4, cx, cy, 32);
+    centerGradient.addColorStop(0, '#ffffff');
+    centerGradient.addColorStop(1, '#cfcfcf');
+
     ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+    ctx.arc(cx, cy, 32, 0, 2 * Math.PI);
+    ctx.fillStyle = centerGradient;
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#111111';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, 0, 2 * Math.PI);
     ctx.fillStyle = '#000000';
     ctx.fill();
+
+    ctx.restore();
   };
 
   const spin = () => {
@@ -140,29 +175,17 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
     setPrize(null);
 
     const winningIndex = Math.floor(Math.random() * segments.length);
-    const segmentAngle = 360 / segments.length;
+    const segmentCenter = winningIndex * segmentAngleDegrees + segmentAngleDegrees / 2;
+    const alignmentRotation = (POINTER_ANGLE - segmentCenter + 360) % 360;
+    const extraSpins = Math.floor(5 + Math.random() * 4);
+    const finalRotation = extraSpins * 360 + alignmentRotation;
 
-    // Додаємо випадкову кількість повних обертів (5-8)
-    const extraSpins = 5 + Math.random() * 3;
-    const baseRotation = extraSpins * 360;
-
-    // Розрахунок кута:
-    // Canvas 0 градусів - це 3 години (праворуч).
-    // Стрілка (в HTML) стоїть зверху (12 годин, -90 градусів).
-    // Ми крутимо канвас, тому треба змістити ціль.
-    const segmentOffset = winningIndex * segmentAngle;
-
-    // Формула: Базові оберти + (Повне коло - зміщення сегмента) - 90 градусів (поправка на стрілку) + половина сегмента (щоб стрілка була по центру)
-    const finalRotation = baseRotation + (360 - segmentOffset) + (segmentAngle / 2) - 90;
-
-    const duration = 4000; // 4 секунди
+    const duration = 4200;
     const startTime = performance.now();
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-
-      // Ease out cubic (плавне сповільнення)
       const easeOut = 1 - Math.pow(1 - progress, 4);
       const currentRotation = easeOut * finalRotation;
 
@@ -173,7 +196,8 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
       } else {
         setIsSpinning(false);
         setHasSpun(true);
-        const wonPrize = segments[winningIndex].text;
+        const resolvedIndex = getSegmentIndexFromRotation(currentRotation);
+        const wonPrize = segments[resolvedIndex].text;
         setPrize(wonPrize);
         if (onWin) onWin(wonPrize);
       }
@@ -209,15 +233,14 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
           </p>
 
           <div className="relative inline-block mb-10">
-            {/* Стрілка-вказівник (CSS трикутник) */}
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 drop-shadow-md">
               <div className="w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[24px] border-t-black"></div>
             </div>
 
             <canvas
               ref={canvasRef}
-              width={350}
-              height={350}
+              width={WHEEL_SIZE}
+              height={WHEEL_SIZE}
               className="max-w-full h-auto"
             />
           </div>
