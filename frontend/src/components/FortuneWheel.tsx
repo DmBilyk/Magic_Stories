@@ -36,6 +36,16 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
   const segmentAngleDegrees = 360 / segments.length;
   const segmentAngleRadians = (2 * Math.PI) / segments.length;
 
+  const rememberWheelSpin = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem('fortuneWheelSpun', 'true');
+      window.localStorage.setItem('fortuneWheelShown', 'true');
+    } catch (error) {
+      console.warn('Unable to persist fortune wheel state', error);
+    }
+  };
+
   const getSegmentIndexFromRotation = (value: number) => {
     const normalized = ((value % 360) + 360) % 360;
     const pointerOffset = (POINTER_ANGLE - normalized + 360) % 360;
@@ -173,6 +183,7 @@ export const FortuneWheel: React.FC<FortuneWheelProps> = ({ onClose, onWin }) =>
 
     setIsSpinning(true);
     setPrize(null);
+    rememberWheelSpin();
 
     const winningIndex = Math.floor(Math.random() * segments.length);
     const segmentCenter = winningIndex * segmentAngleDegrees + segmentAngleDegrees / 2;
