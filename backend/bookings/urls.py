@@ -10,9 +10,13 @@ from .views import (
 app_name = 'bookings'
 
 router = DefaultRouter()
-router.register(r'', StudioBookingViewSet, basename='booking')
+
 router.register(r'availability', BookingAvailabilityViewSet, basename='availability')
 router.register(r'all-inclusive-requests', AllInclusiveRequestViewSet, basename='all-inclusive-request')
+
+
+router.register(r'', StudioBookingViewSet, basename='booking')
+
 
 urlpatterns = [
 
