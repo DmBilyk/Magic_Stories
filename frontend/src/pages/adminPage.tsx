@@ -1012,9 +1012,19 @@ const AllInclusiveRequestsModal: React.FC<{
 
     setLoading(true);
     try {
+      // 🛠️ FIX: Перетворення camelCase -> snake_case для бекенду
+      const payload = {
+        location_id: conversionData.locationId,
+        booking_date: conversionData.bookingDate,
+        booking_time: conversionData.bookingTime,
+        duration_hours: conversionData.durationHours,
+        notes: conversionData.notes,
+        additional_service_ids: conversionData.additionalServiceIds
+      };
+
       await fetchAPI(`${API_BASE}/bookings/all-inclusive-requests/${selectedRequest.id}/convert-to-booking/`, {
         method: 'POST',
-        body: JSON.stringify(conversionData)
+        body: JSON.stringify(payload) // Відправляємо правильний payload
       });
 
       alert('Заявку успішно конвертовано в бронювання!');
