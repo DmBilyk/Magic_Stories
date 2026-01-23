@@ -2,7 +2,7 @@ from rest_framework import serializers
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 
-from .models import StudioBooking, BookingSettings
+from .models import StudioBooking, BookingSettings, AllInclusiveRequest
 from studios.models import AdditionalService, Location
 from clothing.serializers import (
     BookingClothingItemSerializer,
@@ -131,7 +131,9 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             'end_time',
             'payment_status',
             'created_at',
-            'updated_at'
+            'updated_at',
+            'is_all_inclusive',
+            'all_inclusive_package',
         ]
         read_only_fields = [
             'id',
@@ -150,6 +152,8 @@ class StudioBookingSerializer(serializers.ModelSerializer):
             'prop_summary',
             'created_at',
             'updated_at'
+            'is_all_inclusive',
+            'all_inclusive_package',
         ]
 
     def get_end_time(self, obj):
@@ -700,3 +704,30 @@ class AdminBookingSerializer(serializers.ModelSerializer):
             booking.save(update_fields=['total_amount', 'deposit_amount', 'services_total'])
 
         return booking
+
+
+class AllInclusiveRequestSerializer(serializers.ModelSerializer):
+    """Serializer for All-Inclusive package requests."""
+
+    class Meta:
+        model = AllInclusiveRequest
+        fields = [
+            'id',
+            'package_type',
+            'first_name',
+            'last_name',
+            'phone_number',
+            'status',
+            'admin_notes',
+            'booking',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'booking']
+
+    def validate_phone_number(self, value):
+        """Validate phone number format."""
+        cleaned = value.replace('+', '').replace(' ', '').replace('-', '')
+        if not cleaned.isdigit() or len(cleaned) < 10:
+            raise serializers.ValidationError("Invalid phone number format")
+        return value

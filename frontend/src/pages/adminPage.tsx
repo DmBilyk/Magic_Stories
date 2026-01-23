@@ -61,6 +61,19 @@ interface TimeSlot {
   available: boolean;
 }
 
+
+interface AllInclusiveRequest {
+  id: string;
+  package_type: string;
+  first_name: string;
+  last_name: string;
+  phone_number: string;
+  status: string;
+  admin_notes: string;
+  booking: string | null;
+  created_at: string;
+}
+
 // === UTILS ===
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('uk-UA', {
@@ -82,6 +95,11 @@ const addDays = (date: string, days: number) => {
   result.setDate(result.getDate() + days);
   return result.toISOString().split('T')[0];
 };
+
+
+
+
+
 
 // 🛠️ FIX: Helper to safely get hourly rate regardless of casing
 const getHourlyRate = (loc?: Location): number => {
@@ -126,10 +144,19 @@ const AdminBookingPanel = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [allInclusiveRequests, setAllInclusiveRequests] = useState<AllInclusiveRequest[]>([]);
+  const [showAllInclusiveModal, setShowAllInclusiveModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<AllInclusiveRequest | null>(null);
 
-  useEffect(() => { loadLocations(); }, []);
+  useEffect(() => {
+  loadLocations();
+  loadAllInclusiveRequests(); // ← ADD THIS
+}, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadBookings(); }, [currentDate, selectedLocation]);
+  useEffect(() => {
+  loadBookings();
+  loadAllInclusiveRequests(); // ← ADD THIS
+}, [currentDate, selectedLocation]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { filterBookings(); }, [bookings, selectedStatus, searchQuery]);
 
@@ -156,6 +183,14 @@ const AdminBookingPanel = () => {
       setLoading(false);
     }
   };
+  const loadAllInclusiveRequests = async () => {
+  try {
+    const data = await fetchAPI(`${API_BASE}/bookings/all-inclusive-requests/`);
+    setAllInclusiveRequests(data);
+  } catch (err) {
+    console.error('Failed to load all-inclusive requests:', err);
+  }
+};
 
   const filterBookings = () => {
     let filtered = [...bookings];
@@ -195,6 +230,21 @@ const AdminBookingPanel = () => {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-bold text-slate-900">Панель керування бронюваннями</h1>
+
+        {/* All-Inclusive Requests Badge */}
+        {allInclusiveRequests.filter(r => r.status === 'pending').length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setShowAllInclusiveModal(true)}
+              className="flex items-center gap-2 bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 animate-pulse"
+            >
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-medium">
+                Нові All-Inclusive заявки ({allInclusiveRequests.filter(r => r.status === 'pending').length})
+              </span>
+            </button>
+          </div>
+        )}
         <button
           onClick={() => setShowCreateModal(true)}
           disabled={locations.length === 0}
@@ -288,6 +338,22 @@ const AdminBookingPanel = () => {
           locations={locations}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => { setShowCreateModal(false); loadBookings(); }}
+        />
+      )}
+
+      {/* All-Inclusive Requests Modal */}
+      {showAllInclusiveModal && (
+        <AllInclusiveRequestsModal
+          requests={allInclusiveRequests}
+          locations={locations}
+          onClose={() => {
+            setShowAllInclusiveModal(false);
+            setSelectedRequest(null);
+          }}
+          onRefresh={() => {
+            loadAllInclusiveRequests();
+            loadBookings();
+          }}
         />
       )}
     </div>
@@ -901,5 +967,287 @@ const CreateBookingModal: React.FC<{
     </div>
   );
 };
+// === ALL-INCLUSIVE REQUESTS MODAL ===
+const AllInclusiveRequestsModal: React.FC<{
+  requests: AllInclusiveRequest[];
+  locations: Location[];
+  onClose: () => void;
+  onRefresh: () => void;
+}> = ({ requests, locations, onClose, onRefresh }) => {
+  const [selectedRequest, setSelectedRequest] = useState<AllInclusiveRequest | null>(null);
+  const [convertMode, setConvertMode] = useState(false);
+  const [loading, setLoading] = useState(false);
 
+  // Conversion form data
+  const [conversionData, setConversionData] = useState({
+    locationId: '',
+    bookingDate: getTodayDate(),
+    bookingTime: '',
+    durationHours: 2,
+    notes: '',
+    additionalServiceIds: [] as string[]
+  });
+
+  const pendingRequests = requests.filter(r => r.status === 'pending');
+  const contactedRequests = requests.filter(r => r.status === 'contacted');
+
+  const handleMarkContacted = async (requestId: string) => {
+    try {
+      await fetchAPI(`${API_BASE}/bookings/all-inclusive-requests/${requestId}/mark-contacted/`, {
+        method: 'POST'
+      });
+      onRefresh();
+    } catch (err) {
+      alert('Помилка оновлення статусу');
+    }
+  };
+
+  const handleConvertToBooking = async () => {
+    if (!selectedRequest) return;
+
+    if (!conversionData.locationId || !conversionData.bookingDate || !conversionData.bookingTime) {
+      alert('Заповніть всі обов\'язкові поля');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await fetchAPI(`${API_BASE}/bookings/all-inclusive-requests/${selectedRequest.id}/convert-to-booking/`, {
+        method: 'POST',
+        body: JSON.stringify(conversionData)
+      });
+
+      alert('Заявку успішно конвертовано в бронювання!');
+      setConvertMode(false);
+      setSelectedRequest(null);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Помилка конвертації в бронювання');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getPackageName = (type: string) => {
+    const names: Record<string, string> = {
+      'standart': 'Standart',
+      'family': 'Family',
+      'gold': 'Gold',
+      'premium': 'Premium'
+    };
+    return names[type] || type;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between z-10">
+          <h2 className="text-xl font-bold">All-Inclusive Заявки</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {convertMode && selectedRequest ? (
+          // CONVERSION FORM
+          <div className="p-6">
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded mb-6">
+              <h3 className="font-semibold mb-2">Конвертація заявки в бронювання</h3>
+              <div className="text-sm space-y-1">
+                <p><strong>Клієнт:</strong> {selectedRequest.first_name} {selectedRequest.last_name}</p>
+                <p><strong>Телефон:</strong> {selectedRequest.phone_number}</p>
+                <p><strong>Пакет:</strong> {getPackageName(selectedRequest.package_type)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Локація *</label>
+                <select
+                  value={conversionData.locationId}
+                  onChange={(e) => setConversionData({...conversionData, locationId: e.target.value})}
+                  className="w-full px-3 py-2 border rounded"
+                >
+                  <option value="">Оберіть локацію</option>
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Дата *</label>
+                  <input
+                    type="date"
+                    value={conversionData.bookingDate}
+                    onChange={(e) => setConversionData({...conversionData, bookingDate: e.target.value})}
+                    className="w-full px-3 py-2 border rounded"
+                    min={getTodayDate()}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Час *</label>
+                  <input
+                    type="time"
+                    value={conversionData.bookingTime}
+                    onChange={(e) => setConversionData({...conversionData, bookingTime: e.target.value})}
+                    className="w-full px-3 py-2 border rounded"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Тривалість (годин)</label>
+                <select
+                  value={conversionData.durationHours}
+                  onChange={(e) => setConversionData({...conversionData, durationHours: Number(e.target.value)})}
+                  className="w-full px-3 py-2 border rounded"
+                >
+                  {[1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6].map(h => (
+                    <option key={h} value={h}>{h} год</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Деталі та примітки</label>
+                <textarea
+                  value={conversionData.notes}
+                  onChange={(e) => setConversionData({...conversionData, notes: e.target.value})}
+                  className="w-full px-3 py-2 border rounded"
+                  rows={4}
+                  placeholder="Додаткова інформація, узгоджені деталі..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setConvertMode(false);
+                    setSelectedRequest(null);
+                  }}
+                  className="flex-1 px-4 py-2 border rounded hover:bg-slate-50"
+                >
+                  Скасувати
+                </button>
+                <button
+                  onClick={handleConvertToBooking}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Створити бронювання'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          // REQUESTS LIST
+          <div className="p-6">
+            {/* Pending Requests */}
+            {pendingRequests.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4 text-amber-600">
+                  Нові заявки ({pendingRequests.length})
+                </h3>
+                <div className="space-y-3">
+                  {pendingRequests.map(req => (
+                    <div key={req.id} className="bg-amber-50 border border-amber-200 p-4 rounded">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h4 className="font-bold text-lg">{req.first_name} {req.last_name}</h4>
+                          <p className="text-amber-700 font-medium">{getPackageName(req.package_type)}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+                          Нова
+                        </span>
+                      </div>
+
+                      <div className="mb-4">
+                        <div className="flex items-center text-sm mb-1">
+                          <Phone className="w-4 h-4 mr-2" />
+                          <a href={`tel:${req.phone_number}`} className="font-mono hover:underline">
+                            {req.phone_number}
+                          </a>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Створено: {new Date(req.created_at).toLocaleString('uk-UA')}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleMarkContacted(req.id)}
+                          className="flex-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        >
+                          Зв'язався
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedRequest(req);
+                            setConvertMode(true);
+                          }}
+                          className="flex-1 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                        >
+                          Створити бронювання
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Contacted Requests */}
+            {contactedRequests.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-blue-600">
+                  В обробці ({contactedRequests.length})
+                </h3>
+                <div className="space-y-3">
+                  {contactedRequests.map(req => (
+                    <div key={req.id} className="bg-blue-50 border border-blue-200 p-4 rounded">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="font-bold">{req.first_name} {req.last_name}</h4>
+                          <p className="text-blue-700 text-sm">{getPackageName(req.package_type)}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                          В обробці
+                        </span>
+                      </div>
+
+                      <div className="text-sm mb-3">
+                        <Phone className="w-4 h-4 inline mr-2" />
+                        {req.phone_number}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setSelectedRequest(req);
+                          setConvertMode(true);
+                        }}
+                        className="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                      >
+                        Створити бронювання
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pendingRequests.length === 0 && contactedRequests.length === 0 && (
+              <div className="text-center py-12 text-slate-400">
+                Немає активних заявок
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 export default AdminBookingPanel;

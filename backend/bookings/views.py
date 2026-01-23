@@ -6,21 +6,23 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from datetime import date, datetime
 
-from .models import StudioBooking, BookingSettings
+from .models import StudioBooking, BookingSettings, AllInclusiveRequest
 from .serializers import (
     StudioBookingSerializer,
     AdditionalServiceSerializer,
     BookingSettingsSerializer,
     AvailabilityCheckSerializer,
     AvailableSlotSerializer,
-    AdminBookingSerializer
+    AdminBookingSerializer,
+    AllInclusiveRequestSerializer
 )
 from django.db import transaction, IntegrityError
 from studios.models import AdditionalService, Location
 from .services import (
     BookingAvailabilityService,
     BookingCalculationService,
-    BookingManagementService
+    BookingManagementService,
+
 )
 from decimal import Decimal
 
@@ -463,3 +465,110 @@ class BookingSettingsViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class AllInclusiveRequestViewSet(viewsets.ModelViewSet):
+    """Manage All-Inclusive package requests."""
+
+    serializer_class = AllInclusiveRequestSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        """Filter requests - admins see all, others see none."""
+        if self.request.user.is_staff:
+            return AllInclusiveRequest.objects.all()
+        return AllInclusiveRequest.objects.none()
+
+    def get_permissions(self):
+        """Allow unauthenticated users to create requests."""
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create new All-Inclusive request."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='convert-to-booking',
+        permission_classes=[IsAuthenticated]
+    )
+    @transaction.atomic
+    def convert_to_booking(self, request, pk=None):
+        """Convert All-Inclusive request to actual booking (admin only)."""
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Only staff can convert requests'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        ai_request = self.get_object()
+
+        if ai_request.booking:
+            return Response(
+                {'error': 'Request already converted to booking'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create booking from request data
+        booking_data = {
+            'location_id': request.data.get('location_id'),
+            'booking_date': request.data.get('booking_date'),
+            'booking_time': request.data.get('booking_time'),
+            'duration_hours': request.data.get('duration_hours', 2),
+            'first_name': ai_request.first_name,
+            'last_name': ai_request.last_name,
+            'phone_number': ai_request.phone_number,
+            'notes': request.data.get('notes', ''),
+            'status': 'confirmed',
+            'is_all_inclusive': True,
+            'all_inclusive_package': ai_request.package_type,
+            'additional_service_ids': request.data.get('additional_service_ids', [])
+        }
+
+        booking_serializer = StudioBookingSerializer(data=booking_data)
+        booking_serializer.is_valid(raise_exception=True)
+        booking = booking_serializer.save()
+
+        # Link booking to request
+        ai_request.booking = booking
+        ai_request.status = 'confirmed'
+        ai_request.save()
+
+        return Response({
+            'message': 'Successfully converted to booking',
+            'booking': StudioBookingSerializer(booking).data,
+            'request': AllInclusiveRequestSerializer(ai_request).data
+        })
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='mark-contacted',
+        permission_classes=[IsAuthenticated]
+    )
+    def mark_contacted(self, request, pk=None):
+        """Mark request as contacted (admin only)."""
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Only staff can update status'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        ai_request = self.get_object()
+        ai_request.status = 'contacted'
+        if request.data.get('admin_notes'):
+            ai_request.admin_notes = request.data.get('admin_notes')
+        ai_request.save()
+
+        return Response(AllInclusiveRequestSerializer(ai_request).data)

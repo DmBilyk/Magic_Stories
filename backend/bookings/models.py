@@ -101,6 +101,21 @@ class StudioBooking(models.Model):
     notes = models.TextField(blank=True, verbose_name="Notes")
     admin_notes = models.TextField(blank=True, verbose_name="Admin Notes")
 
+    # All-Inclusive marker
+    is_all_inclusive = models.BooleanField(default=False, verbose_name="Is All-Inclusive")
+    all_inclusive_package = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        choices=[
+            ('standart', 'Standart'),
+            ('family', 'Family'),
+            ('gold', 'Gold'),
+            ('premium', 'Premium'),
+        ],
+        verbose_name="All-Inclusive Package"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -226,3 +241,53 @@ class BookingSettings(models.Model):
         settings, created = cls.objects.get_or_create(
             pk=cls.objects.first().pk if cls.objects.exists() else uuid.uuid4())
         return settings
+
+
+class AllInclusiveRequest(models.Model):
+    """All-Inclusive package requests from clients"""
+    PACKAGE_CHOICES = [
+        ('standart', 'Standart'),
+        ('family', 'Family'),
+        ('gold', 'Gold'),
+        ('premium', 'Premium'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('contacted', 'Contacted'),
+        ('confirmed', 'Confirmed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    package_type = models.CharField(max_length=20, choices=PACKAGE_CHOICES, verbose_name="Package Type")
+    first_name = models.CharField(max_length=100, verbose_name="First Name")
+    last_name = models.CharField(max_length=100, verbose_name="Last Name")
+    phone_number = models.CharField(max_length=20, verbose_name="Phone Number")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Status")
+    admin_notes = models.TextField(blank=True, verbose_name="Admin Notes")
+
+    # Link to created booking (if converted)
+    booking = models.OneToOneField(
+        'StudioBooking',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='all_inclusive_request',
+        verbose_name="Created Booking"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "All-Inclusive Request"
+        verbose_name_plural = "All-Inclusive Requests"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['phone_number']),
+        ]
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} - {self.package_type} ({self.status})"

@@ -356,6 +356,63 @@ export const Home = () => {
         </div>
       )}
 
+      {/* All-Inclusive Packages Section */}
+<div id="all-inclusive" className="bg-white py-12 sm:py-32">
+  <div className="max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="text-center mb-10 sm:mb-16">
+      <div className="inline-block border-b border-neutral-200 pb-2 mb-4">
+        <h2 className="text-xs font-light tracking-[0.3em] uppercase text-neutral-400">
+          СПЕЦІАЛЬНІ ПРОПОЗИЦІЇ
+        </h2>
+      </div>
+      <h3 className="text-3xl font-light text-black tracking-tight mb-4">
+        All-Inclusive Пакети
+      </h3>
+      <p className="text-neutral-500 font-light max-w-2xl mx-auto">
+        Готові рішення для вашої ідеальної фотосесії
+      </p>
+    </div>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {['standart', 'family', 'gold', 'premium'].map((type) => (
+        <div
+          key={type}
+          className="group bg-white border border-neutral-200 hover:border-black transition-colors duration-300 overflow-hidden cursor-pointer"
+          onClick={() => navigate('/all-inclusive')}
+        >
+          {/* ТУТ ЗМІНА: aspect-[9/16] робить високе вертикальне фото */}
+          <div className="aspect-[9/16] overflow-hidden">
+            <OptimizedImage
+              src={`/assets/all_inclusive/all_inclusive_${type}.jpg`}
+              alt={`All-Inclusive ${type}`}
+              // object-cover обов'язково, щоб заповнити високий блок без білих смуг
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              aspectRatio="aspect-[9/16]"
+            />
+          </div>
+          <div className="p-6 text-center">
+            <h4 className="text-xl font-light text-black mb-2 capitalize">{type}</h4>
+            <button className="text-sm uppercase tracking-wider text-neutral-600 group-hover:text-black transition-colors flex items-center justify-center mx-auto">
+              Детальніше
+              <ArrowRight className="ml-2 w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div className="text-center mt-12">
+      <button
+        onClick={() => navigate('/all-inclusive')}
+        className="bg-slate-900 text-white px-12 py-4 font-light tracking-wider hover:bg-black transition-colors text-sm uppercase w-full sm:w-auto"
+      >
+        Переглянути всі пакети
+      </button>
+    </div>
+  </div>
+</div>
+
+
       {/* Details Section */}
       <div id="details" className="max-w-7xl mx-auto px-6 py-20 sm:py-32">
         <div className="mb-16">

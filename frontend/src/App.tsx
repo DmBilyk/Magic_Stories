@@ -8,6 +8,7 @@ import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
 import AdminBookingPanel from './pages/adminPage';
 import AdminLogin from './pages/admin_login';
 import { ScrollToTop } from './components/ScrollToTop';
+import { AllInclusive } from './pages/AllInclusive';
 
 // Компонент для захисту адмінських маршрутів
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
@@ -33,7 +34,7 @@ function App() {
           <Route path="/clothing" element={<ClothingRental />} />
           <Route path="/summary" element={<BookingSummary />} />
           <Route path="/payment/success" element={<PaymentSuccessPage />} />
-
+          <Route path="/all-inclusive" element={<AllInclusive />} />
 
 
           <Route path="/manager/login" element={<AdminLogin />} />

@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     StudioBookingViewSet,
     BookingAvailabilityViewSet,
-    BookingSettingsViewSet
+    BookingSettingsViewSet, AllInclusiveRequestViewSet
 )
 
 
@@ -12,6 +12,7 @@ app_name = 'bookings'
 router = DefaultRouter()
 router.register(r'', StudioBookingViewSet, basename='booking')
 router.register(r'availability', BookingAvailabilityViewSet, basename='availability')
+router.register(r'all-inclusive-requests', AllInclusiveRequestViewSet, basename='all-inclusive-request')
 
 urlpatterns = [
 
