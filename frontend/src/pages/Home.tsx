@@ -26,7 +26,7 @@ interface OptimizedImageProps {
 }
 
 
-const [showWheel, setShowWheel] = useState(true);
+
 
 const OptimizedImage = ({
   src,
@@ -95,6 +95,7 @@ export const Home = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [heroImageLoaded, setHeroImageLoaded] = useState(false);
+  const [showWheel, setShowWheel] = useState(true);
   const navigate = useNavigate();
   const { setSelectedLocation } = useBooking();
 

@@ -17,8 +17,17 @@ const segments: WheelSegment[] = [
   { text: '20% знижка на послуги студії', color: '#404040' },
 ];
 
-export default function FortuneWheel() {
+interface FortuneWheelProps {
+  onClose?: () => void;
+}
+
+export default function FortuneWheel({ onClose }: FortuneWheelProps) {
   const [isOpen, setIsOpen] = useState(true);
+
+  const handleClose = () => {
+    setIsOpen(false);
+    onClose?.();
+  };
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [prize, setPrize] = useState<string | null>(null);
@@ -157,7 +166,7 @@ export default function FortuneWheel() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="relative bg-white max-w-2xl w-full max-h-[95vh] overflow-y-auto">
         <button
-          onClick={() => setIsOpen(false)}
+          onClick={handleClose}
           className="absolute top-6 right-6 z-10 w-10 h-10 border border-neutral-200 flex items-center justify-center hover:border-black transition-colors bg-white"
         >
           <X className="w-5 h-5" />
@@ -227,7 +236,7 @@ export default function FortuneWheel() {
               </div>
 
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={handleClose}
                 className="px-10 py-3 border border-black text-black font-light tracking-wider hover:bg-black hover:text-white transition-colors text-sm uppercase"
               >
                 ЗБЕРЕГТИ І ЗАКРИТИ
