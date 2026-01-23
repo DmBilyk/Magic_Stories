@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Clock, Phone, User } from 'lucide-react';
 import { Header } from '../components/Header';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { bookingService } from '../services/api';
 
 const ALL_INCLUSIVE_PACKAGES = [
   {
@@ -88,27 +89,18 @@ export const AllInclusive = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`${API_BASE}/bookings/all-inclusive-request/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` })
-        },
-        body: JSON.stringify({
-          package_type: selectedPackage,
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          phone_number: formData.phone
-        })
-      });
 
-      if (!response.ok) throw new Error('Failed to submit request');
+      await bookingService.createAllInclusiveRequest({
+        packageType: selectedPackage,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phoneNumber: formData.phone
+      });
 
       setSubmitted(true);
     } catch (err) {
       console.error(err);
-      alert('Помилка відправки заявки. Спробуйте ще раз.');
+      alert('Помилка відправки заявки. Перевірте підключення або спробуйте ще раз.');
     } finally {
       setLoading(false);
     }
