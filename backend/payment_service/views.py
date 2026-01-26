@@ -1,11 +1,10 @@
-# payment_service/views.py - ПОВНА ДІАГНОСТИЧНА ВЕРСІЯ
-
 import logging
 from decimal import Decimal
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
+from django.core.cache import cache
 from .models import StudioPayment
 from .services import LiqPayService, CheckboxService
 
@@ -65,7 +64,6 @@ def liqpay_callback_view(request: HttpRequest) -> HttpResponse:
 
 @csrf_exempt
 def payment_success_view(request: HttpRequest) -> HttpResponse:
-
     logger.info("=" * 80)
     logger.info("=== PAYMENT SUCCESS VIEW CALLED ===")
 
@@ -143,7 +141,7 @@ def payment_success_view(request: HttpRequest) -> HttpResponse:
 
 
 def process_liqpay_payment(data: str, signature: str) -> HttpResponse:
-    """Обробка платежу LiqPay."""
+    """Обробка платежу LiqPay з захистом від race conditions."""
     logger.info("--- PROCESSING LIQPAY PAYMENT ---")
 
     liqpay = LiqPayService()
@@ -163,81 +161,110 @@ def process_liqpay_payment(data: str, signature: str) -> HttpResponse:
     logger.info(f"Status: {status}")
     logger.info(f"Amount: {amount}")
 
+    # 🔒 КРИТИЧНО: Використовуємо distributed lock для запобігання race condition
+    lock_key = f"payment_processing_{order_id}"
+    lock_acquired = cache.add(lock_key, "locked", timeout=30)  # 30 секунд
+
+    if not lock_acquired:
+        logger.warning(f"⚠️ Payment {order_id} is already being processed by another request")
+        return HttpResponse(status=200)  # OK, але не обробляємо
+
     try:
-        payment = StudioPayment.objects.select_for_update().get(id=order_id)
-        logger.info(
-            f"Found payment {payment.id}, current status: is_paid={payment.is_paid}, liqpay_status={payment.liqpay_status}")
+        with transaction.atomic():
+            # 🔒 Блокуємо рядок в БД
+            payment = StudioPayment.objects.select_for_update(nowait=False).get(id=order_id)
+
+            logger.info(
+                f"Found payment {payment.id}, current status: is_paid={payment.is_paid}, "
+                f"liqpay_status={payment.liqpay_status}"
+            )
+
+            # 🔒 Перевірка чи вже оброблено (після блокування!)
+            if payment.is_paid and payment.liqpay_status in ('success', 'sandbox'):
+                logger.info(f"ℹ️ Payment {payment.id} already processed successfully, skipping")
+                return HttpResponse(status=200)
+
+            # 🔒 КРИТИЧНО: Валідація суми
+            expected_amount = Decimal(str(payment.amount))
+            received_amount = Decimal(str(amount))
+
+            if expected_amount != received_amount:
+                logger.critical(
+                    f"🚨 SECURITY ALERT: Amount mismatch for payment {payment.id}! "
+                    f"Expected: {expected_amount} UAH, Received: {received_amount} UAH"
+                )
+                payment.liqpay_status = 'fraud_suspected'
+                payment.save(update_fields=['liqpay_status'])
+
+                # Надсилаємо алерт (додайте свою логіку)
+                # send_security_alert(payment, expected_amount, received_amount)
+
+                return HttpResponse("Amount mismatch detected", status=400)
+
+            # Оновлюємо статус
+            old_status = payment.liqpay_status
+            payment.liqpay_status = status
+
+            logger.info(f"Updating LiqPay status: {old_status} → {status}")
+
+            is_successful = status in ('success', 'sandbox')
+
+            if is_successful and not payment.is_paid:
+                payment.is_paid = True
+                payment.save()
+                logger.info(f"✅✅✅ Payment {payment.id} marked as PAID ✅✅✅")
+
+                # Оновлюємо бронювання
+                try:
+                    if hasattr(payment, 'booking') and payment.booking:
+                        from bookings.models import StudioBooking
+                        booking = StudioBooking.objects.select_for_update().get(id=payment.booking.id)
+
+                        old_booking_status = booking.status
+                        logger.info(f"Found booking {booking.id}, current status: {old_booking_status}")
+
+                        if booking.status == 'pending_payment':
+                            booking.status = 'paid'
+                            booking.save(update_fields=['status'])
+                            logger.info(
+                                f"✅✅✅ Booking {booking.id} updated: {old_booking_status} → paid ✅✅✅"
+                            )
+                        else:
+                            logger.info(f"ℹ️ Booking {booking.id} already in status '{booking.status}'")
+                    else:
+                        logger.warning(f"⚠️ Payment {payment.id} has NO associated booking")
+                except Exception as e:
+                    logger.error(f"❌❌❌ FAILED to update booking: {e}", exc_info=True)
+
+                # Checkbox - тільки якщо є email
+                try_create_checkbox_receipt(payment, decoded_data)
+
+            elif not is_successful:
+                payment.is_paid = False
+                payment.save()
+                logger.warning(f"❌ Payment {payment.id} FAILED with status: {status}")
+
+                # Скасовуємо бронювання
+                try:
+                    if hasattr(payment, 'booking') and payment.booking:
+                        booking = payment.booking
+                        if booking.status == 'pending_payment':
+                            booking.status = 'cancelled'
+                            booking.admin_notes += f"\nPayment failed: {status}"
+                            booking.save(update_fields=['status', 'admin_notes'])
+                            logger.info(f"Booking {booking.id} cancelled")
+                except Exception as e:
+                    logger.error(f"Failed to cancel booking: {e}")
+
+            logger.info("--- PAYMENT PROCESSING COMPLETE ---")
+            return HttpResponse(status=200)
+
     except StudioPayment.DoesNotExist:
         logger.error(f"❌ Payment {order_id} NOT FOUND in database")
         return HttpResponse(status=404)
-
-    expected_amount = Decimal(str(payment.amount))
-    received_amount = Decimal(str(amount))
-
-    if expected_amount != received_amount:
-        logger.critical(f"❌ AMOUNT MISMATCH! Expected: {expected_amount}, Got: {received_amount}")
-
-
-    # Якщо вже оброблений
-    if payment.liqpay_status == status and payment.is_paid:
-        logger.info(f"ℹ️ Payment {payment.id} already processed")
-        return HttpResponse(status=200)
-
-    # Оновлюємо статус
-    old_status = payment.liqpay_status
-    payment.liqpay_status = status
-
-    logger.info(f"Updating LiqPay status: {old_status} → {status}")
-
-    is_successful = status in ('success', 'sandbox')
-
-    if is_successful and not payment.is_paid:
-        payment.is_paid = True
-        payment.save()
-        logger.info(f"✅✅✅ Payment {payment.id} marked as PAID ✅✅✅")
-
-        # Оновлюємо бронювання
-        try:
-            if hasattr(payment, 'booking') and payment.booking:
-                from bookings.models import StudioBooking
-                booking = StudioBooking.objects.select_for_update().get(id=payment.booking.id)
-
-                old_booking_status = booking.status
-                logger.info(f"Found booking {booking.id}, current status: {old_booking_status}")
-
-                if booking.status == 'pending_payment':
-                    booking.status = 'paid'
-                    booking.save(update_fields=['status'])
-                    logger.info(f"✅✅✅ Booking {booking.id} updated: {old_booking_status} → paid ✅✅✅")
-                else:
-                    logger.info(f"ℹ️ Booking {booking.id} already in status '{booking.status}'")
-            else:
-                logger.warning(f"⚠️ Payment {payment.id} has NO associated booking")
-        except Exception as e:
-            logger.error(f"❌❌❌ FAILED to update booking: {e}", exc_info=True)
-
-        # Checkbox
-        try_create_checkbox_receipt(payment, decoded_data)
-
-    elif not is_successful:
-        payment.is_paid = False
-        payment.save()
-        logger.warning(f"❌ Payment {payment.id} FAILED with status: {status}")
-
-        # Скасовуємо бронювання
-        try:
-            if hasattr(payment, 'booking') and payment.booking:
-                booking = payment.booking
-                if booking.status == 'pending_payment':
-                    booking.status = 'cancelled'
-                    booking.admin_notes += f"\nPayment failed: {status}"
-                    booking.save(update_fields=['status', 'admin_notes'])
-                    logger.info(f"Booking {booking.id} cancelled")
-        except Exception as e:
-            logger.error(f"Failed to cancel booking: {e}")
-
-    logger.info("--- PAYMENT PROCESSING COMPLETE ---")
-    return HttpResponse(status=200)
+    finally:
+        # Завжди звільняємо lock
+        cache.delete(lock_key)
 
 
 @csrf_exempt
@@ -246,6 +273,20 @@ def check_payment_status_api(request: HttpRequest, payment_id: str) -> JsonRespo
     """API для перевірки статусу платежу з фронтенду."""
     logger.info("=" * 80)
     logger.info(f"=== FRONTEND CHECKING PAYMENT STATUS: {payment_id} ===")
+
+    # 🔒 Rate limiting через cache
+    client_ip = request.META.get('REMOTE_ADDR', 'unknown')
+    rate_limit_key = f"payment_check_rate_{client_ip}_{payment_id}"
+
+    request_count = cache.get(rate_limit_key, 0)
+    if request_count > 10:  # Максимум 10 запитів на хвилину
+        logger.warning(f"⚠️ Rate limit exceeded for {client_ip} checking payment {payment_id}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Too many requests. Please wait.'
+        }, status=429)
+
+    cache.set(rate_limit_key, request_count + 1, 60)  # TTL 1 хвилина
 
     try:
         payment = StudioPayment.objects.get(id=payment_id)
@@ -262,6 +303,23 @@ def check_payment_status_api(request: HttpRequest, payment_id: str) -> JsonRespo
                 logger.info(f"LiqPay API response: {liqpay_status}")
 
                 api_status = liqpay_status.get('status')
+                api_amount = liqpay_status.get('amount')
+
+                # 🔒 КРИТИЧНО: Перевірка суми з API
+                if api_amount:
+                    expected_amount = Decimal(str(payment.amount))
+                    received_amount = Decimal(str(api_amount))
+
+                    if expected_amount != received_amount:
+                        logger.critical(
+                            f"🚨 Amount mismatch in API check for payment {payment_id}! "
+                            f"Expected: {expected_amount}, Got: {received_amount}"
+                        )
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Payment amount mismatch'
+                        }, status=400)
+
                 if api_status in ('success', 'sandbox'):
                     payment.is_paid = True
                     payment.liqpay_status = api_status
@@ -326,10 +384,20 @@ def try_create_checkbox_receipt(payment: StudioPayment, decoded_data: dict):
     """Спроба створити чек Checkbox."""
     try:
         checkbox = CheckboxService()
-        client_email = decoded_data.get('sender_email', 'client@example.com')
+
+        # 🔒 КРИТИЧНО: Отримуємо реальний email
+        client_email = None
 
         if hasattr(payment, 'booking') and payment.booking and payment.booking.email:
             client_email = payment.booking.email
+        elif decoded_data.get('sender_email'):
+            client_email = decoded_data.get('sender_email')
+
+        if not client_email:
+            logger.warning(
+                f"⚠️ No email available for payment {payment.id}, skipping Checkbox receipt"
+            )
+            return
 
         receipt_data = checkbox.create_receipt(payment, client_email=client_email)
 
@@ -342,6 +410,9 @@ def try_create_checkbox_receipt(payment: StudioPayment, decoded_data: dict):
                 'checkbox_fiscal_code',
                 'checkbox_status'
             ])
-            logger.info(f"Checkbox receipt created: {payment.checkbox_receipt_id}")
+            logger.info(f"✅ Checkbox receipt created: {payment.checkbox_receipt_id}")
+        else:
+            logger.warning(f"⚠️ Checkbox receipt creation returned None for payment {payment.id}")
+
     except Exception as e:
-        logger.error(f"Checkbox error: {e}", exc_info=True)
+        logger.error(f"❌ Checkbox error for payment {payment.id}: {e}", exc_info=True)

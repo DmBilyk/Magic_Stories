@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -20,7 +20,6 @@ import { formatCurrency, formatDate, formatTimeRange } from '../utils/dateTime';
 
 const formatHoursLabel = (hours: number): string => {
   if (!Number.isFinite(hours)) return 'годин';
-  // Fractional hours like 1.5 -> use 'години'
   if (hours % 1 !== 0) return 'години';
   const h = Math.abs(Math.floor(hours));
   const rem100 = h % 100;
@@ -29,6 +28,19 @@ const formatHoursLabel = (hours: number): string => {
   if (rem10 === 1) return 'година';
   if (rem10 >= 2 && rem10 <= 4) return 'години';
   return 'годин';
+};
+
+// Валідація телефону (українські номери)
+const validatePhone = (phone: string): boolean => {
+  const cleaned = phone.replace(/\D/g, '');
+  // Українські номери: +380XXXXXXXXX (12 цифр) або 0XXXXXXXXX (10 цифр)
+  return cleaned.length === 12 || cleaned.length === 10;
+};
+
+// Валідація email
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
 };
 
 export const BookingSummary = () => {
@@ -48,6 +60,11 @@ export const BookingSummary = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [bookingComplete, setBookingComplete] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  // Ref для запобігання подвійному submit
+  const isSubmittingRef = useRef(false);
+  const submitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [formData, setFormData] = useState<ContactInfo>({
     firstName: contactInfo.firstName,
@@ -64,128 +81,193 @@ export const BookingSummary = () => {
     }
   }, [selectedLocation, bookingDate, bookingTime, navigate]);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleInputChange = (field: keyof ContactInfo, value: string) => {
     const newData = { ...formData, [field]: value };
     setFormData(newData);
     setContactInfo(newData);
+
+    // Очищення помилки валідації при зміні поля
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const updated = { ...prev };
+        delete updated[field];
+        return updated;
+      });
+    }
+  };
+
+  // Валідація форми
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.firstName.trim()) {
+      errors.firstName = "Ім'я обов'язкове";
+    }
+
+    if (!formData.lastName.trim()) {
+      errors.lastName = "Прізвище обов'язкове";
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = "Телефон обов'язковий";
+    } else if (!validatePhone(formData.phone)) {
+      errors.phone = "Невірний формат телефону";
+    }
+
+    if (!formData.email.trim()) {
+      errors.email = "Email обов'язковий";
+    } else if (!validateEmail(formData.email)) {
+      errors.email = "Невірний формат email";
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const calculateTotals = () => {
-  const baseCost =
-    parseFloat(selectedLocation?.hourlyRate || '0') * durationHours;
+    const baseCost = parseFloat(selectedLocation?.hourlyRate || '0') * durationHours;
+    const servicesCost = selectedServices.reduce(
+      (sum, service) => sum + parseFloat(service.price),
+      0
+    );
+    const clothingCost = clothingCart.reduce(
+      (sum, item) => sum + parseFloat(item.item.price) * item.quantity,
+      0
+    );
+    const propsCost = 0;
+    const totalAmount = baseCost + servicesCost + clothingCost + propsCost;
+    const hourlyRate = parseFloat(selectedLocation?.hourlyRate || '0');
+    const halfTotal = totalAmount * 0.5;
+    const maxDeposit = hourlyRate;
+    const depositAmount = Math.min(halfTotal, maxDeposit);
 
-  const servicesCost = selectedServices.reduce(
-    (sum, service) => sum + parseFloat(service.price),
-    0
-  );
-
-  const clothingCost = clothingCart.reduce(
-    (sum, item) => sum + parseFloat(item.item.price) * item.quantity,
-    0
-  );
-
-  const propsCost = 0;
-
-  const totalAmount = baseCost + servicesCost + clothingCost + propsCost;
-
-
-  const hourlyRate = parseFloat(selectedLocation?.hourlyRate || '0');
-  const halfTotal = totalAmount * 0.5;
-  const maxDeposit = hourlyRate;
-  const depositAmount = Math.min(halfTotal, maxDeposit);
-
-  return {
-    baseCost,
-    servicesCost,
-    clothingCost,
-    totalAmount,
-    depositAmount,
+    return {
+      baseCost,
+      servicesCost,
+      clothingCost,
+      totalAmount,
+      depositAmount,
+    };
   };
-};
 
   const totals = calculateTotals();
 
   const handleConfirmBooking = async () => {
-    if (!selectedLocation) return;
+    // 🔒 Перевірка: чи вже виконується submit
+    if (isSubmittingRef.current) {
+      console.log('⚠️ Submit already in progress, ignoring duplicate request');
+      return;
+    }
 
+    // Валідація форми
+    if (!validateForm()) {
+      console.log('❌ Form validation failed');
+      return;
+    }
+
+    if (!selectedLocation) {
+      setError('Локація не вибрана');
+      return;
+    }
+
+    // 🔒 Встановлюємо флаг submit
+    isSubmittingRef.current = true;
     setLoading(true);
     setError('');
 
     try {
-      // Переконуємося що час має правильний формат (HH:MM або HH:MM:SS)
       const formattedTime = bookingTime.length === 5 ? bookingTime : bookingTime.substring(0, 5);
 
-      // Формуємо clothing_items тільки якщо є елементи в кошику
       const clothingItemsData = clothingCart.length > 0
         ? clothingCart.map((item) => ({
-            clothing_item_id: item.item.id, // <--- ЗМІНЕНО: додано _id
+            clothing_item_id: item.item.id,
             quantity: item.quantity,
           }))
-        : undefined; // Не надсилаємо порожній масив
+        : undefined;
 
       const bookingRequest = {
-        locationId: selectedLocation.id,      // було location_id
-        firstName: formData.firstName,        // було first_name
-        lastName: formData.lastName,          // було last_name
-        phoneNumber: formData.phone,          // було phone_number
-        email: formData.email,
-        bookingDate: bookingDate,             // було booking_date
-        bookingTime: formattedTime,           // було booking_time
-        durationHours: durationHours,         // було duration_hours
-        additionalServiceIds: selectedServices.map((s) => s.id), // було additional_service_ids
-        clothingItems: clothingItemsData,     // передаємо виправлений масив
-        notes: formData.notes || '',
+        locationId: selectedLocation.id,
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        phoneNumber: formData.phone.trim(),
+        email: formData.email.trim(),
+        bookingDate: bookingDate,
+        bookingTime: formattedTime,
+        durationHours: durationHours,
+        additionalServiceIds: selectedServices.map((s) => s.id),
+        clothingItems: clothingItemsData,
+        notes: formData.notes?.trim() || '',
       };
 
-      console.log('Sending correct request:', bookingRequest);
+      console.log('📤 Sending booking request:', bookingRequest);
       const response = await bookingService.create(bookingRequest);
 
-      console.log('Received response:', response);
+      console.log('📥 Received response:', response);
 
       // Перевіряємо наявність платіжних даних
       if (response.payment?.liqpay_data?.data && response.payment?.liqpay_data?.signature) {
-        console.log('LiqPay data found, redirecting to payment...');
+        console.log('💳 LiqPay data found, redirecting to payment...');
 
         // Створюємо форму для редіректу на LiqPay
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = 'https://www.liqpay.ua/api/3/checkout';
         form.acceptCharset = 'utf-8';
-        form.style.display = 'none'; // Приховуємо форму
+        form.style.display = 'none';
 
-        // Додаємо поле data
         const dataInput = document.createElement('input');
         dataInput.type = 'hidden';
         dataInput.name = 'data';
         dataInput.value = response.payment.liqpay_data.data;
         form.appendChild(dataInput);
 
-        // Додаємо поле signature
         const signatureInput = document.createElement('input');
         signatureInput.type = 'hidden';
         signatureInput.name = 'signature';
         signatureInput.value = response.payment.liqpay_data.signature;
         form.appendChild(signatureInput);
 
-        // Додаємо форму до body
         document.body.appendChild(form);
 
-        // Додаємо невелику затримку для гарантії, що форма в DOM
-        setTimeout(() => {
-          console.log('Submitting form to LiqPay...');
+        // Невелика затримка для гарантії, що форма в DOM
+        submitTimeoutRef.current = setTimeout(() => {
+          console.log('📤 Submitting form to LiqPay...');
           form.submit();
+          // Не скидаємо isSubmittingRef, бо йдемо на LiqPay
         }, 100);
       } else {
-        console.warn('No LiqPay data in response, showing success directly');
+        console.warn('⚠️ No LiqPay data in response, showing success directly');
         setBookingComplete(true);
-        setTimeout(() => {
+
+        submitTimeoutRef.current = setTimeout(() => {
           resetBooking();
           navigate('/');
         }, 3000);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create booking');
+      console.error('❌ Booking error:', err);
+
+      // Формуємо зрозуміле повідомлення про помилку
+      let errorMessage = 'Не вдалося створити бронювання';
+
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
       setLoading(false);
+
+      // 🔒 Скидаємо флаг submit при помилці
+      isSubmittingRef.current = false;
     }
   };
 
@@ -217,6 +299,7 @@ export const BookingSummary = () => {
             <button
               onClick={() => navigate('/clothing')}
               className="flex items-center text-slate-500 hover:text-slate-900 transition-colors"
+              disabled={loading}
             >
               <ArrowLeft className="w-5 h-5 mr-2" />
               <span className="font-medium">Назад до одягу</span>
@@ -289,9 +372,15 @@ export const BookingSummary = () => {
                   type="text"
                   value={formData.firstName}
                   onChange={(e) => handleInputChange('firstName', e.target.value)}
-                  className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50"
+                  className={`w-full px-5 py-4 border ${
+                    validationErrors.firstName ? 'border-red-500' : 'border-slate-200'
+                  } focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50`}
                   required
+                  disabled={loading}
                 />
+                {validationErrors.firstName && (
+                  <p className="text-red-500 text-xs mt-1">{validationErrors.firstName}</p>
+                )}
               </div>
 
               <div>
@@ -302,9 +391,15 @@ export const BookingSummary = () => {
                   type="text"
                   value={formData.lastName}
                   onChange={(e) => handleInputChange('lastName', e.target.value)}
-                  className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50"
+                  className={`w-full px-5 py-4 border ${
+                    validationErrors.lastName ? 'border-red-500' : 'border-slate-200'
+                  } focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50`}
                   required
+                  disabled={loading}
                 />
+                {validationErrors.lastName && (
+                  <p className="text-red-500 text-xs mt-1">{validationErrors.lastName}</p>
+                )}
               </div>
 
               <div>
@@ -315,9 +410,16 @@ export const BookingSummary = () => {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
-                  className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50"
+                  placeholder="+380XXXXXXXXX"
+                  className={`w-full px-5 py-4 border ${
+                    validationErrors.phone ? 'border-red-500' : 'border-slate-200'
+                  } focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50`}
                   required
+                  disabled={loading}
                 />
+                {validationErrors.phone && (
+                  <p className="text-red-500 text-xs mt-1">{validationErrors.phone}</p>
+                )}
               </div>
 
               <div>
@@ -328,98 +430,104 @@ export const BookingSummary = () => {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
-                  className="w-full px-5 py-4 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50"
+                  className={`w-full px-5 py-4 border ${
+                    validationErrors.email ? 'border-red-500' : 'border-slate-200'
+                  } focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all rounded-none bg-slate-50`}
                   required
+                  disabled={loading}
                 />
+                {validationErrors.email && (
+                  <p className="text-red-500 text-xs mt-1">{validationErrors.email}</p>
+                )}
               </div>
             </div>
           </section>
 
           {/* Cost Section */}
           <section className="bg-white border border-slate-200 shadow-sm rounded-none">
-             <div className="p-8 border-b border-slate-100">
-                <div className="flex items-center mb-6">
-                    <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3 rounded-none">
-                        <CreditCard className="w-4 h-4 text-slate-700" />
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-900">Розрахунок вартості</h2>
+            <div className="p-8 border-b border-slate-100">
+              <div className="flex items-center mb-6">
+                <div className="w-8 h-8 bg-slate-100 flex items-center justify-center mr-3 rounded-none">
+                  <CreditCard className="w-4 h-4 text-slate-700" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">Розрахунок вартості</h2>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-slate-600">
+                    Оренда студії <span className="text-slate-400 text-sm">({durationHours} год × {formatCurrency(selectedLocation.hourlyRate)})</span>
+                  </span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(totals.baseCost)}
+                  </span>
                 </div>
 
-                <div className="space-y-4">
-                    <div className="flex justify-between items-baseline">
-                        <span className="text-slate-600">
-                            Оренда студії <span className="text-slate-400 text-sm">({durationHours} год × {formatCurrency(selectedLocation.hourlyRate)})</span>
-                        </span>
-                        <span className="font-semibold text-slate-900">
-                            {formatCurrency(totals.baseCost)}
-                        </span>
+                {selectedServices.length > 0 && (
+                  <div className="pt-4 border-t border-slate-100">
+                    <div className="flex justify-between mb-3">
+                      <span className="text-slate-600 font-medium">Додаткові послуги</span>
+                      <span className="font-semibold text-slate-900">{formatCurrency(totals.servicesCost)}</span>
                     </div>
+                    <ul className="space-y-2">
+                      {selectedServices.map((service) => (
+                        <li key={service.id} className="flex justify-between text-sm text-slate-500 pl-4 border-l-2 border-slate-100">
+                          <span>{service.name}</span>
+                          <span>{formatCurrency(service.price)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                    {selectedServices.length > 0 && (
-                        <div className="pt-4 border-t border-slate-100">
-                            <div className="flex justify-between mb-3">
-                                <span className="text-slate-600 font-medium">Додаткові послуги</span>
-                                <span className="font-semibold text-slate-900">{formatCurrency(totals.servicesCost)}</span>
-                            </div>
-                            <ul className="space-y-2">
-                                {selectedServices.map((service) => (
-                                <li key={service.id} className="flex justify-between text-sm text-slate-500 pl-4 border-l-2 border-slate-100">
-                                    <span>{service.name}</span>
-                                    <span>{formatCurrency(service.price)}</span>
-                                </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-
-                    {clothingCart.length > 0 && (
-                        <div className="pt-4 border-t border-slate-100">
-                             <div className="flex justify-between mb-3">
-                                <span className="text-slate-600 font-medium">Оренда одягу</span>
-                                <span className="font-semibold text-slate-900">{formatCurrency(totals.clothingCost)}</span>
-                            </div>
-                            <ul className="space-y-2">
-                                {clothingCart.map((item) => (
-                                <li key={item.item.id} className="flex justify-between text-sm text-slate-500 pl-4 border-l-2 border-slate-100">
-                                    <span>{item.item.name} <span className="text-slate-400">×{item.quantity}</span></span>
-                                    <span>{formatCurrency(parseFloat(item.item.price) * item.quantity)}</span>
-                                </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                </div>
+                {clothingCart.length > 0 && (
+                  <div className="pt-4 border-t border-slate-100">
+                    <div className="flex justify-between mb-3">
+                      <span className="text-slate-600 font-medium">Оренда одягу</span>
+                      <span className="font-semibold text-slate-900">{formatCurrency(totals.clothingCost)}</span>
+                    </div>
+                    <ul className="space-y-2">
+                      {clothingCart.map((item) => (
+                        <li key={item.item.id} className="flex justify-between text-sm text-slate-500 pl-4 border-l-2 border-slate-100">
+                          <span>{item.item.name} <span className="text-slate-400">×{item.quantity}</span></span>
+                          <span>{formatCurrency(parseFloat(item.item.price) * item.quantity)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="bg-slate-50 p-8">
-                 <div className="flex justify-between items-end mb-2">
-                    <span className="text-sm uppercase tracking-wider font-bold text-slate-500">Загальна сума</span>
-                    <span className="text-3xl font-bold text-slate-900">{formatCurrency(totals.totalAmount)}</span>
-                 </div>
-                 <div className="flex justify-between items-center pt-4 border-t border-slate-200">
-                   <span className="font-semibold text-slate-900 flex items-center">
-                    <Check className="w-4 h-4 mr-2 text-slate-900" />
-                    Необхідна передоплата
-                    </span>
-                    <span className="font-bold text-xl text-slate-900">
-                        {formatCurrency(totals.depositAmount)}
-                    </span>
-                 </div>
+              <div className="flex justify-between items-end mb-2">
+                <span className="text-sm uppercase tracking-wider font-bold text-slate-500">Загальна сума</span>
+                <span className="text-3xl font-bold text-slate-900">{formatCurrency(totals.totalAmount)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                <span className="font-semibold text-slate-900 flex items-center">
+                  <Check className="w-4 h-4 mr-2 text-slate-900" />
+                  Необхідна передоплата
+                </span>
+                <span className="font-bold text-xl text-slate-900">
+                  {formatCurrency(totals.depositAmount)}
+                </span>
+              </div>
             </div>
           </section>
 
-           {/* Info Box */}
-           <div className="flex items-start bg-white border border-slate-200 p-6 rounded-none">
-              <Info className="w-5 h-5 text-slate-400 mr-4 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-slate-500 leading-relaxed">
-                <p className="font-semibold text-slate-900 mb-1">Інформація про оплату</p>
-                <p>
+          {/* Info Box */}
+          <div className="flex items-start bg-white border border-slate-200 p-6 rounded-none">
+            <Info className="w-5 h-5 text-slate-400 mr-4 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-slate-500 leading-relaxed">
+              <p className="font-semibold text-slate-900 mb-1">Інформація про оплату</p>
+              <p>
                 Ви будете перенаправлені на LiqPay для безпечної оплати. Для підтвердження бронювання
                 необхідна передоплата (50% від суми, але не більше ціни за 1 годину оренди студії).
                 Залишок можна сплатити у студії.
-                </p>
-              </div>
+              </p>
             </div>
+          </div>
         </div>
       </div>
 
@@ -429,27 +537,21 @@ export const BookingSummary = () => {
           <div className="text-center sm:text-left hidden sm:block">
             <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">До сплати зараз</p>
             <div className="font-bold text-2xl text-slate-900">
-                {formatCurrency(totals.depositAmount)}
+              {formatCurrency(totals.depositAmount)}
             </div>
           </div>
 
           <div className="flex gap-3 w-full sm:w-auto">
-             <button
-                onClick={() => navigate('/clothing')}
-                className="flex-1 sm:flex-none px-6 py-4 text-slate-600 font-medium hover:bg-slate-50 border border-slate-200 hover:border-slate-400 transition-colors rounded-none"
-                disabled={loading}
+            <button
+              onClick={() => navigate('/clothing')}
+              className="flex-1 sm:flex-none px-6 py-4 text-slate-600 font-medium hover:bg-slate-50 border border-slate-200 hover:border-slate-400 transition-colors rounded-none"
+              disabled={loading}
             >
               Назад
             </button>
             <button
               onClick={handleConfirmBooking}
-              disabled={
-                loading ||
-                !formData.firstName ||
-                !formData.lastName ||
-                !formData.phone ||
-                !formData.email
-              }
+              disabled={loading || isSubmittingRef.current}
               className="flex-1 sm:flex-none bg-slate-900 hover:bg-black text-white px-8 py-4 font-bold transition-all shadow-none hover:shadow-lg flex items-center justify-center rounded-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
@@ -470,4 +572,3 @@ export const BookingSummary = () => {
     </div>
   );
 };
-
