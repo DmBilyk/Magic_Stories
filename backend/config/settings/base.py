@@ -129,10 +129,23 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
-            # Це замінить SessionAuthentication
-            'rest_framework_simplejwt.authentication.JWTAuthentication',
-        ),
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    # ✅ ДОДАНО: Throttling (Rate Limiting)
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',      # 100 запитів на годину для анонімів
+        'user': '1000/hour',     # 1000 запитів на годину для залогінених
+        'booking': '10/hour',    # ✅ ДОДАНО: Спеціальний ліміт для бронювань
+        'payment': '20/hour',    # ✅ ДОДАНО: Спеціальний ліміт для платежів
+    }
 }
+
+
+
 
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
@@ -250,8 +263,29 @@ USE_X_FORWARDED_HOST = True
 
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),  # Наприклад, 5 хвилин
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Наприклад, 30 днів
-    'ROTATE_REFRESH_TOKENS': True, # Рекомендовано для безпеки
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),    # ✅ ВИПРАВЛЕНО: 1 година замість 5 хвилин
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,  # ✅ ДОДАНО: Чорний список старих токенів
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'UPDATE_LAST_LOGIN': True,  # ✅ ДОДАНО: Оновлення last_login
+}
+
+
+CSP_DEFAULT_SRC = ("'self'",)
+CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "https://www.liqpay.ua")
+CSP_STYLE_SRC = ("'self'", "'unsafe-inline'")
+CSP_IMG_SRC = ("'self'", "data:", "https:")
+CSP_FONT_SRC = ("'self'", "data:")
+CSP_CONNECT_SRC = ("'self'", "https://api.liqpay.ua")
+CSP_FRAME_SRC = ("'self'", "https://www.liqpay.ua")  # Для LiqPay iframe
+
+# ✅ ДОДАНО: Referrer Policy
+SECURE_REFERRER_POLICY = 'same-origin'
+
+# ✅ ДОДАНО: Permissions Policy
+PERMISSIONS_POLICY = {
+    "geolocation": [],
+    "microphone": [],
+    "camera": [],
 }
