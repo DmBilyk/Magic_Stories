@@ -219,60 +219,32 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        validated_data = serializer.validated_data
-        location_id = validated_data['location_id']
-        booking_date = validated_data['booking_date']
-        booking_time = validated_data['booking_time']
-
-
-        from django.db.models import Q
-        conflicting_bookings = StudioBooking.objects.select_for_update().filter(
-            location_id=location_id,
-            booking_date=booking_date,
-            status__in=['pending_payment', 'paid', 'confirmed']
-        )
-
-        # Перевірячцмо доступність ВЖЕ під блокуванням
-        service = BookingAvailabilityService()
-        is_available, message = service.is_slot_available(
-            booking_date,
-            booking_time,
-            validated_data['duration_hours'],
-            str(location_id)
-        )
-
-        if not is_available:
-            return Response(
-                {'error': message, 'code': 'SLOT_NOT_AVAILABLE'},
-                status=status.HTTP_409_CONFLICT
-            )
-
 
         booking = serializer.save()
+
 
         expected_deposit = booking.calculate_deposit()
 
         if abs(booking.deposit_amount - expected_deposit) > Decimal('0.01'):
-            raise ValidationError({
-                'deposit_amount': f'Expected {expected_deposit}, got {booking.deposit_amount}'
-            })
+            booking.deposit_amount = expected_deposit
+
+            booking.save(update_fields=['deposit_amount'])
+
 
         payment = StudioPayment.objects.create(
-            amount=expected_deposit,  # ✅ Використовуємо перерахований депозит
+            amount=booking.deposit_amount,
             description=f"Deposit for booking {booking.id}"
         )
 
         booking.payment = payment
         booking.save()
 
+
         scheme = request.scheme
-
         host = request.META.get('HTTP_X_FORWARDED_HOST') or request.get_host()
-
         frontend_base_url = f"{scheme}://{host}"
 
         liqpay_service = LiqPayService()
-
         payment_form_data = liqpay_service.generate_payment_form(payment, frontend_base_url)
 
         return Response({
