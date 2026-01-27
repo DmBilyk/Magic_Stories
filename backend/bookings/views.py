@@ -26,6 +26,8 @@ from .services import (
 )
 from decimal import Decimal
 
+from rest_framework.throttling import AnonRateThrottle
+
 from payment_service.models import StudioPayment
 
 from payment_service.services import LiqPayService
@@ -34,7 +36,14 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
 
+from rest_framework.exceptions import ValidationError
+
 import logging
+
+
+class BookingCreateThrottle(AnonRateThrottle):
+    rate = '10/hour'
+
 
 
 class BookingAvailabilityViewSet(viewsets.ViewSet):
@@ -170,10 +179,15 @@ class BookingAvailabilityViewSet(viewsets.ViewSet):
             'calendar': calendar
         })
 
+from rest_framework.decorators import action
+from django.views.decorators.csrf import csrf_protect
+from django.utils.decorators import method_decorator
 
+@method_decorator(csrf_protect, name='dispatch')
 class StudioBookingViewSet(viewsets.ModelViewSet):
     """Manage studio bookings with payment integration."""
 
+    throttle_classes = [BookingCreateThrottle]
     serializer_class = StudioBookingSerializer
     permission_classes = [AllowAny]
 
@@ -202,22 +216,50 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Create booking and initiate payment process."""
         serializer = self.get_serializer(data=request.data)
-
         serializer.is_valid(raise_exception=True)
 
-        try:
-            booking = serializer.save()
-        except IntegrityError as e:
-            return Response({
-                'error': 'This time slot was just booked by another user. Please choose another time.',
-                'code': 'BOOKING_CONFLICT'
-            }, status=status.HTTP_409_CONFLICT)
+        validated_data = serializer.validated_data
+        location_id = validated_data['location_id']
+        booking_date = validated_data['booking_date']
+        booking_time = validated_data['booking_time']
+
+
+        from django.db.models import Q
+        conflicting_bookings = StudioBooking.objects.select_for_update().filter(
+            location_id=location_id,
+            booking_date=booking_date,
+            status__in=['pending_payment', 'paid', 'confirmed']
+        )
+
+        # Перевірячцмо доступність ВЖЕ під блокуванням
+        service = BookingAvailabilityService()
+        is_available, message = service.is_slot_available(
+            booking_date,
+            booking_time,
+            validated_data['duration_hours'],
+            str(location_id)
+        )
+
+        if not is_available:
+            return Response(
+                {'error': message, 'code': 'SLOT_NOT_AVAILABLE'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+
+        booking = serializer.save()
+
+        expected_deposit = booking.calculate_deposit()
+
+        if abs(booking.deposit_amount - expected_deposit) > Decimal('0.01'):
+            raise ValidationError({
+                'deposit_amount': f'Expected {expected_deposit}, got {booking.deposit_amount}'
+            })
 
         payment = StudioPayment.objects.create(
-            amount=booking.deposit_amount,
-            description=f"Deposit for booking {booking.id} - {booking.first_name} {booking.last_name} on {booking.booking_date}"
+            amount=expected_deposit,  # ✅ Використовуємо перерахований депозит
+            description=f"Deposit for booking {booking.id}"
         )
 
         booking.payment = payment
@@ -357,32 +399,30 @@ class StudioBookingViewSet(viewsets.ModelViewSet):
         url_path='admin-create',
         permission_classes=[IsAuthenticated]
     )
+
+    @action(detail=False, methods=['post'], url_path='admin-create')
     @transaction.atomic
     def admin_create(self, request):
-        """Create booking directly without payment validation (admin only)."""
         if not request.user.is_staff:
-            return Response(
-                {'error': 'Only staff can create bookings directly'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
+            return Response({'error': 'Only staff...'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = StudioBookingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-
         booking = serializer.save()
 
+        # Валідація статусу
+        allowed_statuses = ['pending_payment', 'paid', 'confirmed']
+        new_status = request.data.get('status')
 
-        if request.data.get('status'):
-            booking.status = request.data.get('status')
-            booking.save(update_fields=['status'])
+        if new_status and new_status in allowed_statuses:
+            booking.status = new_status
             booking.save(update_fields=['status'])
 
         return Response(
             StudioBookingSerializer(booking).data,
             status=status.HTTP_201_CREATED
         )
+
 
     @action(detail=False, methods=['get'], url_path='location-bookings')
     def location_bookings(self, request):
