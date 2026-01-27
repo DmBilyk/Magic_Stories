@@ -151,8 +151,17 @@ class StudioBooking(models.Model):
         return base_total + services_total
 
     def calculate_deposit(self):
-        """Calculate deposit amount"""
-        return (self.total_amount * self.deposit_percentage) / Decimal('100.00')
+
+        room_rental_price = self.location.hourly_rate * self.duration_hours
+
+
+        half_price = room_rental_price * Decimal('0.5')
+
+
+        hourly_rate_limit = self.location.hourly_rate
+
+
+        return min(half_price, hourly_rate_limit)
 
     def get_end_time(self):
         """Calculate booking end time"""
