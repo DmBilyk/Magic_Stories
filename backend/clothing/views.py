@@ -1,4 +1,3 @@
-# clothing/views.py
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,6 +6,7 @@ from django.db.models import Q, Prefetch
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.permissions import AllowAny
+from django.utils.html import escape
 
 from .models import (
     ClothingCategory,
@@ -66,7 +66,6 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             return ClothingItemListSerializer
         return ClothingItemDetailSerializer
 
-
     def get_serializer_context(self):
         """
         Extra context provided to the serializer class.
@@ -91,18 +90,27 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=True, is_available=True)
 
         if category:
-            queryset = queryset.filter(category_id=category)
+            # SECURITY FIX: Validate UUID format to prevent injection
+            try:
+                from uuid import UUID
+                UUID(category)
+                queryset = queryset.filter(category_id=category)
+            except (ValueError, AttributeError):
+                # Invalid UUID, return empty queryset
+                queryset = queryset.none()
 
         if size:
-            queryset = queryset.filter(size=size)
-
-        if available_only.lower() == 'true':
-            queryset = queryset.filter(is_available=True)
+            # SECURITY FIX: Whitelist allowed sizes
+            allowed_sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'ONE_SIZE']
+            if size in allowed_sizes:
+                queryset = queryset.filter(size=size)
 
         if search:
+            # SECURITY FIX: Escape and limit search query
+            search_clean = escape(search)[:100]  # Limit length
             queryset = queryset.filter(
-                Q(name__icontains=search) |
-                Q(description__icontains=search)
+                Q(name__icontains=search_clean) |
+                Q(description__icontains=search_clean)
             )
 
         return queryset
@@ -160,7 +168,11 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        serializer = ClothingImageSerializer(data=request.data, context={'request': request})
+        # SECURITY FIX: Explicitly allowed fields only
+        allowed_fields = ['image', 'alt_text', 'order']
+        filtered_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+
+        serializer = ClothingImageSerializer(data=filtered_data, context={'request': request})
         serializer.is_valid(raise_exception=True)
 
         image = ClothingImage.objects.create(
@@ -178,7 +190,8 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
         """Delete an image from clothing item"""
         item = self.get_object()
         try:
-            image = item.images.get(id=image_id)
+            # SECURITY FIX: Verify image belongs to this item (prevent IDOR)
+            image = ClothingImage.objects.get(id=image_id, clothing_item=item)
             image.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except ClothingImage.DoesNotExist:
@@ -223,7 +236,6 @@ class ClothingAvailabilityViewSet(viewsets.ViewSet):
 
         result = []
         for item_data in available_items:
-            # 🔧 FIX: provide request context to serializer
             item_serializer = ClothingItemListSerializer(
                 item_data['item'],
                 context={'request': request}
@@ -251,10 +263,16 @@ class ClothingAvailabilityViewSet(viewsets.ViewSet):
         serializer = ClothingCostCalculationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # SECURITY FIX: Limit number of items to prevent abuse
+        clothing_items = serializer.validated_data['clothing_items']
+        if len(clothing_items) > 50:
+            return Response(
+                {'error': 'Too many items in single request'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         service = ClothingCostCalculationService()
-        cost_data = service.calculate_clothing_cost(
-            serializer.validated_data['clothing_items']
-        )
+        cost_data = service.calculate_clothing_cost(clothing_items)
 
         return Response(cost_data)
 
@@ -278,9 +296,14 @@ class ClothingRentalSettingsViewSet(viewsets.ViewSet):
     def update(self, request):
         """Update clothing rental settings"""
         settings = ClothingRentalSettings.get_settings()
+
+        # SECURITY FIX: Explicitly allowed fields only
+        allowed_fields = ['max_items_per_booking', 'is_rental_enabled', 'rental_terms']
+        filtered_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+
         serializer = ClothingRentalSettingsSerializer(
             settings,
-            data=request.data,
+            data=filtered_data,
             partial=True
         )
         serializer.is_valid(raise_exception=True)

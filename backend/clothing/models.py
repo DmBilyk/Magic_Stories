@@ -1,4 +1,3 @@
-# clothing/models.py
 import uuid
 from decimal import Decimal
 from django.db import models
@@ -60,7 +59,7 @@ class ClothingItem(models.Model):
     is_active = models.BooleanField(default=True)
     quantity = models.PositiveIntegerField(
         default=1,
-        validators=[MinValueValidator(1)],
+        validators=[MinValueValidator(1), MaxValueValidator(1000)],
         help_text="Total quantity available"
     )
     notes = models.TextField(blank=True, help_text="Internal notes for admin")
@@ -83,6 +82,9 @@ class ClothingItem(models.Model):
     def clean(self):
         if self.price <= 0:
             raise ValidationError({'price': 'Price must be greater than 0'})
+        # SECURITY FIX: Add max price validation
+        if self.price > Decimal('1000000'):
+            raise ValidationError({'price': 'Price exceeds maximum allowed value'})
 
     def get_available_quantity_for_date(self, booking_date, booking_time, duration_hours):
         """Calculate available quantity for a specific datetime"""
@@ -125,10 +127,10 @@ class ClothingImage(models.Model):
         related_name='images'
     )
     image = models.ImageField(upload_to='clothing_images/')
-    # Додаємо поле для мініатюри
+    # Field for thumbnails
     image_thumbnail = models.ImageField(upload_to='clothing_images/thumbnails/', blank=True, null=True)
     alt_text = models.CharField(max_length=200, blank=True)
-    order = models.PositiveIntegerField(default=0)
+    order = models.PositiveIntegerField(default=0, validators=[MaxValueValidator(999)])
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -141,7 +143,7 @@ class ClothingImage(models.Model):
         return f"Image for {self.clothing_item.name}"
 
     def save(self, *args, **kwargs):
-        # Якщо зображення є, а мініатюри немає або змінилось основне фото
+        # If image exists but thumbnail doesn't or main image changed
         if self.image:
             self.make_thumbnail()
         super().save(*args, **kwargs)
@@ -151,32 +153,48 @@ class ClothingImage(models.Model):
         if not self.image:
             return
 
-        # Відкриваємо зображення
-        img = Image.open(self.image)
+        try:
+            # Open the image
+            img = Image.open(self.image)
 
-        # Конвертуємо в RGB, якщо це PNG/RGBA, щоб зберегти як JPEG
-        if img.mode in ('RGBA', 'LA'):
-            background = Image.new(img.mode[:-1], img.size, '#fff')
-            background.paste(img, img.split()[-1])
-            img = background
+            # SECURITY FIX: Validate image size before processing
+            max_size = 50 * 1024 * 1024  # 50MB
+            if self.image.size > max_size:
+                raise ValidationError("Image file size exceeds 50MB limit")
 
-        # Створюємо копію для мініатюри
-        thumb = img.copy()
+            # Convert to RGB if PNG/RGBA to save as JPEG
+            if img.mode in ('RGBA', 'LA', 'P'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                if img.mode in ('RGBA', 'LA'):
+                    background.paste(img, mask=img.split()[-1])
+                else:
+                    background.paste(img)
+                img = background
 
-        # Розмір мініатюри (наприклад, 400x500 для карток товарів)
-        thumb.thumbnail((400, 500), Image.Resampling.LANCZOS)
+            # Create copy for thumbnail
+            thumb = img.copy()
 
-        # Зберігаємо в пам'ять
-        thumb_io = BytesIO()
-        thumb.save(thumb_io, 'JPEG', quality=85)
+            # Thumbnail size (e.g., 400x500 for product cards)
+            thumb.thumbnail((400, 500), Image.Resampling.LANCZOS)
 
-        # Створюємо ім'я файлу
-        name = os.path.basename(self.image.name)
-        thumb_name, _ = os.path.splitext(name)
-        thumb_filename = f"{thumb_name}_thumb.jpg"
+            # Save to memory
+            thumb_io = BytesIO()
+            thumb.save(thumb_io, 'JPEG', quality=85)
 
-        # Зберігаємо файл у поле image_thumbnail, save=False щоб не викликати рекурсію
-        self.image_thumbnail.save(thumb_filename, ContentFile(thumb_io.getvalue()), save=False)
+            # Create filename
+            name = os.path.basename(self.image.name)
+            thumb_name, _ = os.path.splitext(name)
+            thumb_filename = f"{thumb_name}_thumb.jpg"
+
+            # Save to image_thumbnail field, save=False to prevent recursion
+            self.image_thumbnail.save(thumb_filename, ContentFile(thumb_io.getvalue()), save=False)
+        except Exception as e:
+            # Log error but don't fail the save
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create thumbnail: {str(e)}")
 
 
 class BookingClothingItem(models.Model):
@@ -194,7 +212,7 @@ class BookingClothingItem(models.Model):
     )
     quantity = models.PositiveIntegerField(
         default=1,
-        validators=[MinValueValidator(1)]
+        validators=[MinValueValidator(1), MaxValueValidator(100)]
     )
     price_at_booking = models.DecimalField(
         max_digits=10,
@@ -213,15 +231,15 @@ class BookingClothingItem(models.Model):
         return f"{self.clothing_item.name} x{self.quantity} for booking {self.booking.id}"
 
     def clean(self):
-        # Check max 10 items limit per booking
+        # Check max 50 items limit per booking
         if self.booking_id:
             existing_count = BookingClothingItem.objects.filter(
                 booking=self.booking
             ).exclude(id=self.id).count()
 
-            if existing_count >= 10:
+            if existing_count >= 50:
                 raise ValidationError(
-                    'Cannot add more than 10 clothing items to a single booking'
+                    'Cannot add more than 50 clothing items to a single booking'
                 )
 
         # Check availability

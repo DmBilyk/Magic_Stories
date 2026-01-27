@@ -22,12 +22,16 @@ class ClothingImageSerializer(serializers.ModelSerializer):
         model = ClothingImage
         fields = ['id', 'image', 'image_url', 'thumbnail_url', 'alt_text', 'order']
         read_only_fields = ['id']
+        # SECURITY FIX: Add max length validation
+        extra_kwargs = {
+            'alt_text': {'max_length': 200, 'required': False},
+            'order': {'min_value': 0, 'max_value': 999, 'required': False}
+        }
 
     def get_image_url(self, obj):
         request = self.context.get('request')
 
         if not obj.image:
-            # logger.warning(f"No image file for ClothingImage {obj.id}")
             return None
 
         try:
@@ -46,7 +50,7 @@ class ClothingImageSerializer(serializers.ModelSerializer):
     def get_thumbnail_url(self, obj):
         request = self.context.get('request')
 
-        # Вибираємо: або мініатюра, або оригінал, якщо мініатюри ще немає
+        # Choose thumbnail or original if thumbnail doesn't exist yet
         image_field = obj.image_thumbnail if obj.image_thumbnail else obj.image
 
         if not image_field:
@@ -91,7 +95,7 @@ class ClothingItemListSerializer(serializers.ModelSerializer):
         image = obj.images.order_by('order', 'created_at').first()
         if not image:
             return None
-        # Важливо передати context для побудови повних URL
+        # Important: pass context to build full URLs
         return ClothingImageSerializer(image, context=self.context).data
 
 
@@ -114,6 +118,15 @@ class ClothingItemDetailSerializer(serializers.ModelSerializer):
     def validate_price(self, value):
         if value <= 0:
             raise serializers.ValidationError("Price must be greater than 0")
+        # SECURITY FIX: Add max price validation
+        if value > Decimal('1000000'):
+            raise serializers.ValidationError("Price exceeds maximum allowed value")
+        return value
+
+    def validate_quantity(self, value):
+        # SECURITY FIX: Add reasonable quantity limit
+        if value > 1000:
+            raise serializers.ValidationError("Quantity exceeds maximum allowed value")
         return value
 
 
@@ -153,10 +166,16 @@ class BookingClothingItemCreateSerializer(serializers.Serializer):
         except ClothingItem.DoesNotExist:
             raise serializers.ValidationError("Clothing item not found")
 
+    def validate_quantity(self, value):
+        # SECURITY FIX: Reasonable per-item quantity limit
+        if value > 100:
+            raise serializers.ValidationError("Quantity per item cannot exceed 100")
+        return value
+
 
 class ClothingAvailabilitySerializer(serializers.Serializer):
     """Serializer for checking clothing availability"""
-    clothing_item_id = serializers.UUIDField()
+    clothing_item_id = serializers.UUIDField(required=False)
     booking_date = serializers.DateField()
     booking_time = serializers.TimeField()
     duration_hours = serializers.DecimalField(
@@ -167,15 +186,26 @@ class ClothingAvailabilitySerializer(serializers.Serializer):
     )
     quantity = serializers.IntegerField(min_value=1, default=1)
 
+    def validate_quantity(self, value):
+        # SECURITY FIX: Reasonable quantity limit
+        if value > 100:
+            raise serializers.ValidationError("Quantity cannot exceed 100")
+        return value
+
 
 class ClothingCostCalculationSerializer(serializers.Serializer):
     """Serializer for calculating clothing rental costs"""
     clothing_items = BookingClothingItemCreateSerializer(many=True)
 
     def validate_clothing_items(self, value):
-        if len(value) > 10:
+        # SECURITY FIX: Strict limit on items per request
+        if len(value) > 50:
             raise serializers.ValidationError(
-                "Cannot add more than 10 clothing items to a booking"
+                "Cannot calculate cost for more than 50 items at once"
+            )
+        if len(value) == 0:
+            raise serializers.ValidationError(
+                "At least one item is required"
             )
         return value
 
@@ -192,3 +222,11 @@ class ClothingRentalSettingsSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
         read_only_fields = ['updated_at']
+
+    def validate_max_items_per_booking(self, value):
+        # SECURITY FIX: Enforce reasonable limits
+        if value < 1 or value > 50:
+            raise serializers.ValidationError(
+                "Max items per booking must be between 1 and 50"
+            )
+        return value
