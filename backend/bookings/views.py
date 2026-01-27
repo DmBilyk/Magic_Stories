@@ -183,7 +183,7 @@ from rest_framework.decorators import action
 from django.views.decorators.csrf import csrf_protect
 from django.utils.decorators import method_decorator
 
-@method_decorator(csrf_protect, name='dispatch')
+
 class StudioBookingViewSet(viewsets.ModelViewSet):
     """Manage studio bookings with payment integration."""
 
