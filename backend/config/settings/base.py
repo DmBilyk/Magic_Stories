@@ -271,7 +271,6 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,  # ✅ ДОДАНО: Оновлення last_login
 }
 
-INSTALLED_APPS += ['django_ratelimit']
 
 
 
