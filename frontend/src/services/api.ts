@@ -378,6 +378,6 @@ export const paymentService = {
             status: string;
         } | null;
         error?: string;
-    }>(`/api/payments/${paymentId}/check-status/`);
+    }>(`${API_ENDPOINTS.payments}${paymentId}/check-status/`);
   }
 };

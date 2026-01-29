@@ -20,6 +20,8 @@ export const API_ENDPOINTS = {
   propAvailability: `${API_BASE_URL}/props/availability/`,
   propSettings: `${API_BASE_URL}/props/settings/`,
 
+  payments: `${API_BASE_URL}/payments/`,
+
 
 
 
